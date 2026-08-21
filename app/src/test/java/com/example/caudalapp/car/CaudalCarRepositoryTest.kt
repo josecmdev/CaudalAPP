@@ -66,8 +66,8 @@ class CaudalCarRepositoryTest {
     }
 
     @Test
-    fun `cantidades rapidas mantienen la regla de dieciocho por cincuenta`() {
-        assertEquals(listOf(18, 36, 54, 72), CarBagPresetPolicy.quantities)
-        assertEquals(listOf(50, 100, 150, 200), CarBagPresetPolicy.quantities.map(CarBagPresetPolicy::totalFor))
+    fun `cantidades rapidas incluyen ocho por veinticinco y dieciocho por cincuenta`() {
+        assertEquals(listOf(8, 18, 36, 54, 72), CarBagPresetPolicy.quantities)
+        assertEquals(listOf(25, 50, 100, 150, 200), CarBagPresetPolicy.quantities.map(CarBagPresetPolicy::totalFor))
     }
 }

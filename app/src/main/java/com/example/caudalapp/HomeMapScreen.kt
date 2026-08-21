@@ -53,7 +53,6 @@ fun HomeMapScreen(
     stores: StoreDirectory,
     accounts: List<StoreAccountState>,
     previousRoutes: List<CompletedRouteRecord>,
-    onStartRoute: () -> Unit,
     onExitMap: () -> Unit,
     onStateChanged: () -> Unit,
     onAccountsChanged: (List<StoreAccountState>, StoreAccountAdjustment) -> Unit,
@@ -181,13 +180,6 @@ fun HomeMapScreen(
                 shape = CircleShape,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
             ) { Text("+", fontSize = 28.sp) }
-            Button(
-                onClick = onStartRoute,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = controlsBottom),
-                shape = RoundedCornerShape(20.dp),
-            ) {
-                Text("Iniciar ruta", modifier = Modifier.padding(horizontal = 28.dp, vertical = 6.dp), fontWeight = FontWeight.Bold)
-            }
             HomeMapPanel(
                 storeCount = displayedStores.size,
                 pendingCount = accounts.count(AccountSettlementPolicy::hasPending),
@@ -255,7 +247,7 @@ private fun HomeMapPanel(
                 onDrag = { change, amount -> change.consume(); drag += amount },
             )
         },
-        shape = RoundedCornerShape(if (landscape) 24.dp else 26.dp),
+        shape = if (landscape) RoundedCornerShape(0.dp) else RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .96f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {

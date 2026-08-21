@@ -8,6 +8,7 @@ class SuggestedPricePolicyTest {
 
     @Test
     fun `sugiere los totales habituales exactos para bolsas`() {
+        assertEquals(25, SuggestedPricePolicy.forQuantity(ProductCatalog.BAGS, 8))
         assertEquals(50, SuggestedPricePolicy.forQuantity(ProductCatalog.BAGS, 18))
         assertEquals(100, SuggestedPricePolicy.forQuantity(ProductCatalog.BAGS, 36))
         assertEquals(150, SuggestedPricePolicy.forQuantity(ProductCatalog.BAGS, 54))
