@@ -8,6 +8,8 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,6 +47,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -57,10 +61,12 @@ import com.example.caudalapp.domain.StoreDirectory
 import com.example.caudalapp.domain.CompletedRouteRecord
 import com.example.caudalapp.domain.ProductDirectory
 import com.example.caudalapp.domain.StoreAccountState
+import com.example.caudalapp.domain.StoreAccountAdjustment
 import com.example.caudalapp.persistence.CaudalRestoredState
 import com.example.caudalapp.persistence.CaudalStateStore
 import androidx.lifecycle.ViewModel
 import java.io.File
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     private val appState by viewModels<CaudalViewModel>()
@@ -99,6 +105,7 @@ class CaudalViewModel : ViewModel() {
         private set
     val completedRoutes = mutableStateListOf<CompletedRouteRecord>()
     var outstandingAccounts by mutableStateOf<List<StoreAccountState>>(emptyList())
+    val accountAdjustments = mutableStateListOf<StoreAccountAdjustment>()
     var products by mutableStateOf(ProductDirectory())
         private set
     var storeFocusId by mutableStateOf<String?>(null)
@@ -116,6 +123,8 @@ class CaudalViewModel : ViewModel() {
             completedRoutes.clear()
             completedRoutes.addAll(restored.completedRoutes)
             outstandingAccounts = restored.outstandingAccounts
+            accountAdjustments.clear()
+            accountAdjustments.addAll(restored.accountAdjustments)
             products = restored.products
         }
     }
@@ -128,6 +137,7 @@ class CaudalViewModel : ViewModel() {
                 completedRoutes = completedRoutes.toList(),
                 outstandingAccounts = outstandingAccounts,
                 products = products,
+                accountAdjustments = accountAdjustments.toList(),
             ),
         )
     }
@@ -294,6 +304,12 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 initialFocus = appState.storeFocusId?.let { appState.stores.get(it)?.location },
                 onBack = { appState.storeFocusId = null; appState.destination = null },
                 onStateChanged = appState::persist,
+                onAccountsChanged = { updated, adjustment ->
+                    appState.outstandingAccounts = updated
+                    appState.accountAdjustments += adjustment
+                    appState.persist()
+                },
+                productName = { id -> appState.products.get(id)?.name ?: id },
                 modifier = Modifier.padding(padding),
             )
         } else if (appState.destination == HomeDestination.PRODUCTS) {
@@ -329,24 +345,85 @@ private fun CaudalApp(appState: CaudalViewModel) {
 
 @Composable
 private fun CompletionDropTransition(trigger: Int) {
-    val expansion = remember { Animatable(0f) }
+    val progress = remember { Animatable(0f) }
     val opacity = remember { Animatable(0f) }
     LaunchedEffect(trigger) {
         if (trigger == 0) return@LaunchedEffect
-        expansion.snapTo(0f)
+        progress.snapTo(0f)
         opacity.snapTo(1f)
-        expansion.animateTo(1f, tween(480))
-        opacity.animateTo(0f, tween(360))
+        progress.animateTo(1f, tween(1_050, easing = FastOutSlowInEasing))
+        delay(80)
+        opacity.animateTo(0f, tween(420, easing = LinearOutSlowInEasing))
     }
     if (opacity.value > 0f) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            drawCircle(
-                color = Color(0xFF0878E8).copy(alpha = opacity.value),
-                radius = size.maxDimension * 1.15f * expansion.value,
-                center = center,
-            )
+            val water = Color(0xFF0878E8).copy(alpha = opacity.value)
+            val p = progress.value
+            val impactY = size.height * .42f
+            if (p < .55f) {
+                val fall = (p / .55f).coerceIn(0f, 1f)
+                val radius = 22f + 54f * fall
+                val dropCenter = Offset(size.width / 2f, -90f + (impactY + 90f) * fall)
+                drawPath(waterDropPath(dropCenter, radius), water)
+                if (fall > .25f) {
+                    drawCircle(
+                        color = water.copy(alpha = water.alpha * .38f),
+                        radius = radius * .22f,
+                        center = Offset(dropCenter.x, dropCenter.y - radius * 1.9f),
+                    )
+                }
+            } else {
+                val spread = ((p - .55f) / .45f).coerceIn(0f, 1f)
+                val easedSpread = FastOutSlowInEasing.transform(spread)
+                val radius = 76f + size.maxDimension * 1.18f * easedSpread
+                drawCircle(water, radius, Offset(size.width / 2f, impactY))
+                if (spread < .35f) {
+                    drawOval(
+                        color = Color.White.copy(alpha = (.24f * (1f - spread / .35f)) * opacity.value),
+                        topLeft = Offset(size.width / 2f - 110f, impactY - 18f),
+                        size = androidx.compose.ui.geometry.Size(220f, 36f),
+                    )
+                }
+            }
         }
     }
+}
+
+private fun waterDropPath(center: Offset, radius: Float): Path = Path().apply {
+    moveTo(center.x, center.y - radius * 1.55f)
+    cubicTo(
+        center.x - radius * .18f,
+        center.y - radius,
+        center.x - radius,
+        center.y - radius * .25f,
+        center.x - radius,
+        center.y + radius * .35f,
+    )
+    cubicTo(
+        center.x - radius,
+        center.y + radius,
+        center.x - radius * .48f,
+        center.y + radius * 1.32f,
+        center.x,
+        center.y + radius * 1.32f,
+    )
+    cubicTo(
+        center.x + radius * .48f,
+        center.y + radius * 1.32f,
+        center.x + radius,
+        center.y + radius,
+        center.x + radius,
+        center.y + radius * .35f,
+    )
+    cubicTo(
+        center.x + radius,
+        center.y - radius * .25f,
+        center.x + radius * .18f,
+        center.y - radius,
+        center.x,
+        center.y - radius * 1.55f,
+    )
+    close()
 }
 
 @Composable
