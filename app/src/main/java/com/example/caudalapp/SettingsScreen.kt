@@ -44,6 +44,14 @@ fun SettingsScreen(
                     }
                 }
             }
+            Text("Estilo del mapa", fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppMapStyle.entries.forEach { mapStyle ->
+                    OutlinedButton(onClick = { onSettingsChanged(settings.copy(mapStyle = mapStyle)) }) {
+                        Text(if (settings.mapStyle == mapStyle) "✓ ${mapStyle.label}" else mapStyle.label)
+                    }
+                }
+            }
         }
         SettingsCard("Seguimiento GPS", "Frecuencia de actualización durante una ruta") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

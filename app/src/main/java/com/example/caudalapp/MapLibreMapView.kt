@@ -64,9 +64,7 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.Point
 
-private const val CAUDAL_MAP_STYLE = "https://tiles.openfreemap.org/styles/bright"
 private const val CAUDAL_NAVIGATION_ZOOM = 16.2
-private const val CAUDAL_NAVIGATION_TILT = 48.0
 private const val CAUDAL_MAP_LOG_TAG = "CaudalMap"
 private const val STORE_SOURCE_ID = "caudal-store-source"
 private const val STORE_LAYER_ID = "caudal-store-layer"
@@ -90,12 +88,19 @@ class CaudalMapController {
     private var onStoreSelected: (String) -> Unit = {}
     private var placementMode = false
     private var automaticFollow = true
+    private var navigationTilt = 24.0
+    private var resumeFollowAtMillis = 0L
     private var pendingFocus: GeoPoint? = null
     private var onCenterChanged: (GeoPoint) -> Unit = {}
     private var clickListener: MapLibreMap.OnMapClickListener? = null
     private var cameraIdleListener: MapLibreMap.OnCameraIdleListener? = null
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val autoFollow = Runnable { if (!placementMode) followCurrentLocation() }
+    private val movementMonitor = object : Runnable {
+        override fun run() {
+            if (automaticFollow && !placementMode) updateMovementAwareTracking()
+            mainHandler.postDelayed(this, MOVEMENT_CHECK_INTERVAL_MILLIS)
+        }
+    }
 
     internal fun attach(
         map: MapLibreMap,
@@ -106,6 +111,8 @@ class CaudalMapController {
         this.map = map
         this.context = context
         this.onCenterChanged = onCenterChanged
+        mainHandler.removeCallbacks(movementMonitor)
+        mainHandler.post(movementMonitor)
         if (clickListener == null) {
             clickListener = MapLibreMap.OnMapClickListener { coordinate ->
                 val screenPoint = map.projection.toScreenLocation(coordinate)
@@ -170,7 +177,12 @@ class CaudalMapController {
 
     fun setAutomaticFollow(enabled: Boolean) {
         automaticFollow = enabled
-        if (!enabled) mainHandler.removeCallbacks(autoFollow)
+        mainHandler.removeCallbacks(movementMonitor)
+        if (enabled) mainHandler.post(movementMonitor)
+    }
+
+    fun setMapStyle(mapStyle: AppMapStyle) {
+        navigationTilt = if (mapStyle == AppMapStyle.THREE_D) 52.0 else 24.0
     }
 
     private fun renderStores() {
@@ -231,16 +243,17 @@ class CaudalMapController {
 
     @SuppressLint("MissingPermission")
     fun followCurrentLocation() {
-        mainHandler.removeCallbacks(autoFollow)
+        resumeFollowAtMillis = 0L
         map?.locationComponent?.let { location ->
             if (!location.isLocationComponentActivated) return
-            if (location.cameraMode == CameraMode.TRACKING_GPS) return
+            val mode = if (vehicleIsMoving()) CameraMode.TRACKING_GPS else CameraMode.TRACKING
+            if (location.cameraMode == mode) return
             location.setCameraMode(
-                CameraMode.TRACKING_GPS,
+                mode,
                 650L,
                 CAUDAL_NAVIGATION_ZOOM,
                 null,
-                CAUDAL_NAVIGATION_TILT,
+                navigationTilt,
                 null,
             )
         }
@@ -248,7 +261,6 @@ class CaudalMapController {
 
     fun setPlacementMode(active: Boolean) {
         placementMode = active
-        mainHandler.removeCallbacks(autoFollow)
         val location = map?.locationComponent ?: return
         if (!location.isLocationComponentActivated) return
         if (active) location.cameraMode = CameraMode.NONE else followCurrentLocation()
@@ -272,15 +284,38 @@ class CaudalMapController {
         if (!automaticFollow) return
         val location = map?.locationComponent ?: return
         if (placementMode || !location.isLocationComponentActivated ||
-            location.cameraMode == CameraMode.TRACKING_GPS
+            location.cameraMode == CameraMode.TRACKING_GPS || location.cameraMode == CameraMode.TRACKING
         ) return
-        mainHandler.removeCallbacks(autoFollow)
-        mainHandler.postDelayed(autoFollow, AUTO_FOLLOW_DELAY_MILLIS)
+        // Mientras el vehículo está detenido se respeta la posición elegida por
+        // el usuario. El monitor recupera el seguimiento al detectar movimiento.
+        resumeFollowAtMillis = if (vehicleIsMoving()) {
+            android.os.SystemClock.uptimeMillis() + AUTO_FOLLOW_DELAY_MILLIS
+        } else Long.MAX_VALUE
     }
+
+    private fun updateMovementAwareTracking() {
+        val location = map?.locationComponent ?: return
+        if (!location.isLocationComponentActivated) return
+        val tracking = location.cameraMode == CameraMode.TRACKING || location.cameraMode == CameraMode.TRACKING_GPS
+        if (tracking) {
+            followCurrentLocation()
+        } else if (vehicleIsMoving()) {
+            if (resumeFollowAtMillis == Long.MAX_VALUE) {
+                resumeFollowAtMillis = android.os.SystemClock.uptimeMillis() + AUTO_FOLLOW_DELAY_MILLIS
+            } else if (android.os.SystemClock.uptimeMillis() >= resumeFollowAtMillis) {
+                followCurrentLocation()
+            }
+        }
+    }
+
+    private fun vehicleIsMoving(): Boolean =
+        (map?.locationComponent?.lastKnownLocation?.speed ?: 0f) >= MOVING_SPEED_METERS_PER_SECOND
 
 }
 
 private const val AUTO_FOLLOW_DELAY_MILLIS = 6_000L
+private const val MOVEMENT_CHECK_INTERVAL_MILLIS = 2_000L
+private const val MOVING_SPEED_METERS_PER_SECOND = 1.4f
 
 @Composable
 fun MapLibreMapView(
@@ -292,6 +327,7 @@ fun MapLibreMapView(
     onLocationPermissionGranted: () -> Unit = {},
     automaticFollow: Boolean = true,
     gpsIntervalSeconds: Int = 1,
+    mapStyle: AppMapStyle = AppMapStyle.LIBERTY,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -313,6 +349,9 @@ fun MapLibreMapView(
     }
     LaunchedEffect(automaticFollow) {
         controller.setAutomaticFollow(automaticFollow)
+    }
+    LaunchedEffect(mapStyle) {
+        controller.setMapStyle(mapStyle)
     }
 
     LaunchedEffect(Unit) {
@@ -366,7 +405,7 @@ fun MapLibreMapView(
                     map.cameraPosition = CameraPosition.Builder()
                         .target(LatLng(initialCenter.latitude, initialCenter.longitude))
                         .zoom(CAUDAL_NAVIGATION_ZOOM)
-                        .tilt(CAUDAL_NAVIGATION_TILT)
+                        .tilt(if (mapStyle == AppMapStyle.THREE_D) 52.0 else 24.0)
                         .build()
                     map.setMinZoomPreference(9.0)
                     map.setMaxZoomPreference(19.0)
@@ -378,9 +417,13 @@ fun MapLibreMapView(
                             .include(LatLng(13.4, -88.0))
                             .build(),
                     )
+                    // La brújula y el giro manual siguen disponibles como en una
+                    // aplicación de navegación. La orientación automática no usa
+                    // el magnetómetro: solo el rumbo GPS cuando hay movimiento.
                     map.uiSettings.isCompassEnabled = true
+                    map.uiSettings.isRotateGesturesEnabled = true
                     map.uiSettings.isAttributionEnabled = true
-                    map.setStyle(CAUDAL_MAP_STYLE) { style ->
+                    map.setStyle(mapStyle.styleUrl) { style ->
                         if (lifetime.destroyed || controller.map !== map) return@setStyle
                         controller.onStyleLoaded(style)
                         if (permissionGranted) {

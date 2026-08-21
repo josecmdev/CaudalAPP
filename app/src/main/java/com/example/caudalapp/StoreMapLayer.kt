@@ -15,6 +15,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,6 +29,10 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
@@ -50,6 +56,7 @@ fun StoreMapLayer(
     onLocationPermissionGranted: () -> Unit = {},
     automaticFollow: Boolean = true,
     gpsIntervalSeconds: Int = 1,
+    mapStyle: AppMapStyle = AppMapStyle.LIBERTY,
     modifier: Modifier = Modifier,
 ) {
     val mapController = remember { CaudalMapController() }
@@ -79,6 +86,7 @@ fun StoreMapLayer(
             onLocationPermissionGranted = onLocationPermissionGranted,
             automaticFollow = automaticFollow,
             gpsIntervalSeconds = gpsIntervalSeconds,
+            mapStyle = mapStyle,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -114,6 +122,7 @@ fun StoreNameDialog(
     onDismiss: () -> Unit,
     onSave: (name: String, phone: String?) -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
@@ -133,6 +142,8 @@ fun StoreNameDialog(
                     modifier = Modifier.padding(top = 10.dp),
                     label = { Text("Nombre de la tienda") },
                     isError = error,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                     singleLine = true,
                 )
                 OutlinedTextField(
@@ -140,6 +151,8 @@ fun StoreNameDialog(
                     onValueChange = { phone = it },
                     modifier = Modifier.padding(top = 8.dp),
                     label = { Text("Teléfono (opcional)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     singleLine = true,
                 )
                 if (error) Text("Escribe el nombre", color = MaterialTheme.colorScheme.error)
