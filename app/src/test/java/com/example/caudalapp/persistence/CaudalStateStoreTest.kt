@@ -12,6 +12,8 @@ import com.example.caudalapp.domain.StoreDirectory
 import com.example.caudalapp.domain.TransferDirection
 import com.example.caudalapp.domain.TransferLine
 import com.example.caudalapp.domain.ExpenseCategory
+import com.example.caudalapp.domain.StoreAccountAdjustment
+import com.example.caudalapp.domain.StoreAccountAdjustmentType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -67,6 +69,15 @@ class CaudalStateStoreTest {
                     listOf(completed),
                     outstandingAccounts = ledger.outstandingAccountStates(),
                     products = products,
+                    accountAdjustments = listOf(
+                        StoreAccountAdjustment(
+                            id = "adjustment-1",
+                            storeId = store.id,
+                            type = StoreAccountAdjustmentType.MONEY_PAYMENT,
+                            amount = 25,
+                            recordedAtEpochMillis = 1_500L,
+                        ),
+                    ),
                 ),
             ),
         )
@@ -89,6 +100,7 @@ class CaudalStateStoreTest {
         assertEquals(250, decoded.completedRoutes.single().countedCash)
         assertNotNull(decoded.products.allProducts().firstOrNull { it.name == "Refresco" })
         assertEquals(3, decoded.outstandingAccounts.single().pendingDeliveries.getValue(bags.id))
+        assertEquals(25, decoded.accountAdjustments.single().amount)
     }
 
     @Test

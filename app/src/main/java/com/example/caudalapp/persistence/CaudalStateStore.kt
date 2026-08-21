@@ -17,6 +17,8 @@ import com.example.caudalapp.domain.SaleRecord
 import com.example.caudalapp.domain.Store
 import com.example.caudalapp.domain.StoreAccountState
 import com.example.caudalapp.domain.StoreDirectory
+import com.example.caudalapp.domain.StoreAccountAdjustment
+import com.example.caudalapp.domain.StoreAccountAdjustmentType
 import com.example.caudalapp.domain.KennethTransfer
 import com.example.caudalapp.domain.TransferDirection
 import com.example.caudalapp.domain.TransferLine
@@ -30,6 +32,7 @@ data class CaudalRestoredState(
     val completedRoutes: List<CompletedRouteRecord>,
     val outstandingAccounts: List<StoreAccountState> = emptyList(),
     val products: ProductDirectory = ProductDirectory(),
+    val accountAdjustments: List<StoreAccountAdjustment> = emptyList(),
 )
 
 @Serializable
@@ -94,6 +97,17 @@ private data class AccountDto(
     val pendingDeliveries: Map<String, Int>,
     val pendingContainers: Map<String, Int>,
     val pendingPayments: Map<String, Int>,
+)
+
+@Serializable
+private data class AccountAdjustmentDto(
+    val id: String,
+    val storeId: String,
+    val type: String,
+    val amount: Int = 0,
+    val productId: String? = null,
+    val quantity: Int = 0,
+    val recordedAtEpochMillis: Long,
 )
 
 @Serializable
@@ -191,6 +205,7 @@ private data class PersistedStateDto(
     val completedRoutes: List<CompletedRouteDto> = emptyList(),
     val outstandingAccounts: List<AccountDto> = emptyList(),
     val products: List<ProductDto> = emptyList(),
+    val accountAdjustments: List<AccountAdjustmentDto> = emptyList(),
 )
 
 object CaudalStateCodec {
@@ -245,6 +260,17 @@ private fun CaudalRestoredState.toDto() = PersistedStateDto(
     },
     outstandingAccounts = outstandingAccounts.map(StoreAccountState::toDto),
     products = products.allProducts().map(Product::toDto),
+    accountAdjustments = accountAdjustments.map { adjustment ->
+        AccountAdjustmentDto(
+            adjustment.id,
+            adjustment.storeId,
+            adjustment.type.name,
+            adjustment.amount,
+            adjustment.productId,
+            adjustment.quantity,
+            adjustment.recordedAtEpochMillis,
+        )
+    },
 )
 
 private fun RouteLedgerState.toDto() = LedgerDto(
@@ -318,6 +344,17 @@ private fun PersistedStateDto.toDomain(): CaudalRestoredState {
         },
         outstandingAccounts = outstandingAccounts.map(AccountDto::toDomain),
         products = ProductDirectory.restore(products.map(ProductDto::toDomain)),
+        accountAdjustments = accountAdjustments.map { adjustment ->
+            StoreAccountAdjustment(
+                adjustment.id,
+                adjustment.storeId,
+                StoreAccountAdjustmentType.valueOf(adjustment.type),
+                adjustment.amount,
+                adjustment.productId,
+                adjustment.quantity,
+                adjustment.recordedAtEpochMillis,
+            )
+        },
     )
 }
 
