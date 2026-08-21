@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 fun SettingsScreen(
     settings: AppSettings,
     onSettingsChanged: (AppSettings) -> Unit,
+    onExportDiagnostics: () -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -87,6 +88,15 @@ fun SettingsScreen(
         SettingsCard("Datos y escalabilidad", "Versión local preparada para respaldo y sincronización futura") {
             Text("Almacenamiento: local en esta tablet")
             Text("Caudal App 1.0", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        SettingsCard("Diagnóstico", "Guarda los errores aunque no lleves la computadora") {
+            Text(
+                "Genera un archivo que puedes enviar a Google Drive, correo, WhatsApp u otra aplicación instalada.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = onExportDiagnostics, modifier = Modifier.fillMaxWidth()) {
+                Text("Enviar reporte de diagnóstico")
+            }
         }
     }
 }

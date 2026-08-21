@@ -32,6 +32,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.caudalapp.domain.GeoPoint
 import com.example.caudalapp.domain.StoreMarkerState
+import com.example.caudalapp.domain.AdaptiveGpsPolicy
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -309,13 +310,12 @@ class CaudalMapController {
     }
 
     private fun vehicleIsMoving(): Boolean =
-        (map?.locationComponent?.lastKnownLocation?.speed ?: 0f) >= MOVING_SPEED_METERS_PER_SECOND
+        AdaptiveGpsPolicy.isMoving(map?.locationComponent?.lastKnownLocation?.speed)
 
 }
 
 private const val AUTO_FOLLOW_DELAY_MILLIS = 6_000L
 private const val MOVEMENT_CHECK_INTERVAL_MILLIS = 2_000L
-private const val MOVING_SPEED_METERS_PER_SECOND = 1.4f
 
 @Composable
 fun MapLibreMapView(
