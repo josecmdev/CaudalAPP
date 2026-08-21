@@ -38,4 +38,21 @@ class AccountSettlementPolicyTest {
 
         assertFalse(AccountSettlementPolicy.hasPending(updated))
     }
+
+    @Test
+    fun `una devolucion parcial conserva los envases restantes`() {
+        val account = StoreAccountState(
+            storeId = "store-1",
+            debts = emptyList(),
+            pendingDeliveries = mapOf("bags" to 5),
+            pendingContainers = mapOf("water-jug" to 3),
+            pendingPayments = emptyMap(),
+        )
+
+        val withDelivery = AccountSettlementPolicy.completeDelivery(account, "bags", 2)
+        val updated = AccountSettlementPolicy.receiveContainers(withDelivery, "water-jug", 1)
+
+        assertEquals(3, updated.pendingDeliveries.getValue("bags"))
+        assertEquals(2, updated.pendingContainers.getValue("water-jug"))
+    }
 }

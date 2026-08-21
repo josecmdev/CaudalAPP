@@ -37,11 +37,21 @@ object AccountSettlementPolicy {
         return account.copy(debts = debts, pendingPayments = payments)
     }
 
-    fun completeDelivery(account: StoreAccountState, productId: String): StoreAccountState =
-        account.copy(pendingDeliveries = account.pendingDeliveries - productId)
+    fun completeDelivery(account: StoreAccountState, productId: String, quantity: Int = Int.MAX_VALUE): StoreAccountState {
+        val remaining = (account.pendingDeliveries[productId] ?: 0) - quantity.coerceAtLeast(0)
+        return account.copy(
+            pendingDeliveries = if (remaining > 0) account.pendingDeliveries + (productId to remaining)
+            else account.pendingDeliveries - productId,
+        )
+    }
 
-    fun receiveContainers(account: StoreAccountState, productId: String): StoreAccountState =
-        account.copy(pendingContainers = account.pendingContainers - productId)
+    fun receiveContainers(account: StoreAccountState, productId: String, quantity: Int = Int.MAX_VALUE): StoreAccountState {
+        val remaining = (account.pendingContainers[productId] ?: 0) - quantity.coerceAtLeast(0)
+        return account.copy(
+            pendingContainers = if (remaining > 0) account.pendingContainers + (productId to remaining)
+            else account.pendingContainers - productId,
+        )
+    }
 
     fun hasPending(account: StoreAccountState): Boolean =
         moneyDue(account) > 0 || account.pendingDeliveries.values.any { it > 0 } ||

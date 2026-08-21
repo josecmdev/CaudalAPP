@@ -67,6 +67,8 @@ import com.example.caudalapp.persistence.CaudalStateStore
 import androidx.lifecycle.ViewModel
 import java.io.File
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 
 class MainActivity : ComponentActivity() {
     private val appState by viewModels<CaudalViewModel>()
@@ -82,6 +84,11 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         appState.persist()
         super.onStop()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        appState.reloadPersistence()
     }
 }
 
@@ -99,7 +106,7 @@ class CaudalViewModel : ViewModel() {
     var destination by mutableStateOf<HomeDestination?>(null)
     var mapVisible by mutableStateOf(true)
     var routeCloseRequested by mutableStateOf(false)
-    var completionTransitionId by mutableIntStateOf(0)
+    private val completionTransitions = Channel<Unit>(capacity = Channel.BUFFERED)
     var activeRoute by mutableStateOf<ActiveRoute?>(null)
     var stores by mutableStateOf(StoreDirectory())
         private set
@@ -117,16 +124,22 @@ class CaudalViewModel : ViewModel() {
     fun attachPersistence(file: File) {
         if (stateStore != null) return
         stateStore = CaudalStateStore(file)
-        stateStore?.load()?.let { restored ->
-            activeRoute = restored.activeRoute
-            stores = restored.stores
-            completedRoutes.clear()
-            completedRoutes.addAll(restored.completedRoutes)
-            outstandingAccounts = restored.outstandingAccounts
-            accountAdjustments.clear()
-            accountAdjustments.addAll(restored.accountAdjustments)
-            products = restored.products
-        }
+        reloadPersistence()
+    }
+
+    fun reloadPersistence() {
+        stateStore?.load()?.let(::applyRestoredState)
+    }
+
+    private fun applyRestoredState(restored: CaudalRestoredState) {
+        activeRoute = restored.activeRoute
+        stores = restored.stores
+        completedRoutes.clear()
+        completedRoutes.addAll(restored.completedRoutes)
+        outstandingAccounts = restored.outstandingAccounts
+        accountAdjustments.clear()
+        accountAdjustments.addAll(restored.accountAdjustments)
+        products = restored.products
     }
 
     fun persist() {
@@ -152,11 +165,21 @@ class CaudalViewModel : ViewModel() {
         settings = updated
         settingsStore?.save(updated)
     }
+
+    fun showCompletionTransition() {
+        completionTransitions.trySend(Unit)
+    }
+
+    fun completionTransitionEvents() = completionTransitions.receiveAsFlow()
 }
 
 @Composable
 private fun CaudalApp(appState: CaudalViewModel) {
     val context = LocalContext.current.applicationContext
+    var completionTransitionId by remember { mutableIntStateOf(0) }
+    LaunchedEffect(appState) {
+        appState.completionTransitionEvents().collect { completionTransitionId++ }
+    }
     Box(modifier = Modifier.fillMaxSize()) {
       Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         if (appState.mapVisible && appState.activeRoute != null) {
@@ -196,7 +219,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
                     appState.activeRoute = null
                     appState.destination = null
                     appState.mapVisible = true
-                    appState.completionTransitionId++
+                    appState.showCompletionTransition()
                     appState.persist()
                 },
                 onRouteDiscarded = {
@@ -206,7 +229,6 @@ private fun CaudalApp(appState: CaudalViewModel) {
                     appState.activeRoute = null
                     appState.destination = null
                     appState.mapVisible = true
-                    appState.completionTransitionId++
                     appState.persist()
                 },
                 onStateChanged = appState::persist,
@@ -233,6 +255,12 @@ private fun CaudalApp(appState: CaudalViewModel) {
                     appState.mapVisible = false
                 },
                 onStateChanged = appState::persist,
+                onAccountsChanged = { updated, adjustment ->
+                    appState.outstandingAccounts = updated
+                    appState.accountAdjustments += adjustment
+                    appState.persist()
+                },
+                productName = { id -> appState.products.get(id)?.name ?: id },
                 settings = appState.settings,
                 modifier = Modifier.padding(padding),
             )
@@ -339,7 +367,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
             )
         }
       }
-      CompletionDropTransition(appState.completionTransitionId)
+      CompletionDropTransition(completionTransitionId)
     }
 }
 

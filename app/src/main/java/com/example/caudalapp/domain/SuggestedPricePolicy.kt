@@ -1,16 +1,12 @@
 package com.example.caudalapp.domain
 
 object SuggestedPricePolicy {
-    private val bagTotals = mapOf(
-        18 to 50,
-        36 to 100,
-        72 to 150,
-    )
-
     fun forQuantity(product: Product, quantity: Int): Int? {
         if (quantity <= 0) return null
         return when (product.id) {
-            ProductCatalog.BAGS.id -> bagTotals[quantity]
+            // La tarifa habitual se cobra por grupos completos de 18 bolsas.
+            // Una cantidad parcial queda libre para evitar inventar un precio.
+            ProductCatalog.BAGS.id -> quantity.takeIf { it % 18 == 0 }?.let { it / 18 * 50 }
             ProductCatalog.WATER_JUG.id -> quantity * 8
             else -> product.defaultSuggestedTotal
         }

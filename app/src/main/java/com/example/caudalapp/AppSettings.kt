@@ -8,11 +8,17 @@ enum class AppTheme(val label: String) {
     DARK("Oscuro"),
 }
 
+enum class AppMapStyle(val label: String, val styleUrl: String) {
+    LIBERTY("Liberty", "https://tiles.openfreemap.org/styles/liberty"),
+    THREE_D("3D", "https://tiles.openfreemap.org/styles/liberty"),
+}
+
 data class AppSettings(
     val theme: AppTheme = AppTheme.SYSTEM,
     val gpsIntervalSeconds: Int = 1,
     val automaticMapFollow: Boolean = true,
     val hapticFeedback: Boolean = true,
+    val mapStyle: AppMapStyle = AppMapStyle.LIBERTY,
 )
 
 class AppSettingsStore(context: Context) {
@@ -25,6 +31,9 @@ class AppSettingsStore(context: Context) {
         gpsIntervalSeconds = preferences.getInt("gps_interval_seconds", 1).takeIf { it in setOf(1, 3, 5, 10) } ?: 1,
         automaticMapFollow = preferences.getBoolean("automatic_map_follow", true),
         hapticFeedback = preferences.getBoolean("haptic_feedback", true),
+        mapStyle = runCatching {
+            AppMapStyle.valueOf(preferences.getString("map_style", AppMapStyle.LIBERTY.name).orEmpty())
+        }.getOrDefault(AppMapStyle.LIBERTY),
     )
 
     fun save(settings: AppSettings) {
@@ -33,6 +42,7 @@ class AppSettingsStore(context: Context) {
             .putInt("gps_interval_seconds", settings.gpsIntervalSeconds)
             .putBoolean("automatic_map_follow", settings.automaticMapFollow)
             .putBoolean("haptic_feedback", settings.hapticFeedback)
+            .putString("map_style", settings.mapStyle.name)
             .apply()
     }
 }

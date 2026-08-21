@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -32,11 +33,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import com.example.caudalapp.domain.AccountSettlementPolicy
 import com.example.caudalapp.domain.GeoPoint
 import com.example.caudalapp.domain.Store
@@ -125,7 +130,7 @@ fun StoresScreen(
                     revision++
                 },
                 onDeliveryCompleted = { productId, quantity ->
-                    val updated = AccountSettlementPolicy.completeDelivery(account, productId)
+                    val updated = AccountSettlementPolicy.completeDelivery(account, productId, quantity)
                     onAccountsChanged(
                         accounts.replaceAccount(updated),
                         StoreAccountAdjustment(
@@ -139,7 +144,7 @@ fun StoresScreen(
                     revision++
                 },
                 onContainersReceived = { productId, quantity ->
-                    val updated = AccountSettlementPolicy.receiveContainers(account, productId)
+                    val updated = AccountSettlementPolicy.receiveContainers(account, productId, quantity)
                     onAccountsChanged(
                         accounts.replaceAccount(updated),
                         StoreAccountAdjustment(
@@ -319,7 +324,7 @@ private fun List<StoreAccountState>.replaceAccount(updated: StoreAccountState): 
     }
 
 @Composable
-private fun StoreAccountManagementDialog(
+internal fun StoreAccountManagementDialog(
     store: Store,
     account: StoreAccountState,
     productName: (String) -> String,
@@ -330,6 +335,8 @@ private fun StoreAccountManagementDialog(
 ) {
     val moneyDue = AccountSettlementPolicy.moneyDue(account)
     var paymentText by remember(account.storeId, moneyDue) { mutableStateOf(moneyDue.toString()) }
+    var paymentEdited by remember(account.storeId, moneyDue) { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
     AlertDialog(
         onDismissRequest = {},
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
@@ -343,11 +350,14 @@ private fun StoreAccountManagementDialog(
                     Text("Dinero pendiente: Q$moneyDue", fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
                         value = paymentText,
-                        onValueChange = { paymentText = it.filter(Char::isDigit).take(8) },
-                        modifier = Modifier.fillMaxWidth(),
+                        onValueChange = { paymentText = it.filter(Char::isDigit).take(8); paymentEdited = true },
+                        modifier = Modifier.fillMaxWidth().onFocusChanged {
+                            if (it.isFocused && !paymentEdited) paymentText = ""
+                        },
                         label = { Text("Cantidad recibida") },
                         prefix = { Text("Q ") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                         singleLine = true,
                     )
                     Button(
@@ -360,14 +370,16 @@ private fun StoreAccountManagementDialog(
                     AccountPendingRow(
                         label = "${productName(productId)} por entregar: $quantity",
                         action = "Marcar entregado",
-                        onClick = { onDeliveryCompleted(productId, quantity) },
+                        maximum = quantity,
+                        onConfirm = { onDeliveryCompleted(productId, it) },
                     )
                 }
                 account.pendingContainers.filterValues { it > 0 }.forEach { (productId, quantity) ->
                     AccountPendingRow(
                         label = "Envases de ${productName(productId)}: $quantity",
                         action = "Marcar recibidos",
-                        onClick = { onContainersReceived(productId, quantity) },
+                        maximum = quantity,
+                        onConfirm = { onContainersReceived(productId, it) },
                     )
                 }
             }
@@ -377,10 +389,28 @@ private fun StoreAccountManagementDialog(
 }
 
 @Composable
-private fun AccountPendingRow(label: String, action: String, onClick: () -> Unit) {
+private fun AccountPendingRow(label: String, action: String, maximum: Int, onConfirm: (Int) -> Unit) {
+    var quantity by remember(label, maximum) { mutableStateOf(maximum.toString()) }
+    var edited by remember(label, maximum) { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(label, fontWeight = FontWeight.SemiBold)
-        OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(action) }
+        OutlinedTextField(
+            value = quantity,
+            onValueChange = { quantity = it.filter(Char::isDigit).take(7); edited = true },
+            modifier = Modifier.fillMaxWidth().onFocusChanged {
+                if (it.isFocused && !edited) quantity = ""
+            },
+            label = { Text("Cantidad") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+            singleLine = true,
+        )
+        OutlinedButton(
+            onClick = { quantity.toIntOrNull()?.let(onConfirm) },
+            enabled = quantity.toIntOrNull() in 1..maximum,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(action) }
     }
 }
 
