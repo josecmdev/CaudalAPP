@@ -448,15 +448,18 @@ private fun MapOptionsDialog(
                         }
                     }
                 }
-                if (!routeActive) {
-                    Spacer(Modifier.height(16.dp))
-                    Button(
-                        onClick = { onDestinationSelected(HomeDestination.NEW_ROUTE) },
-                        modifier = Modifier.fillMaxWidth().height(64.dp),
-                        shape = RoundedCornerShape(20.dp),
-                    ) {
-                        Text("Iniciar nueva ruta", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    }
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = { onDestinationSelected(HomeDestination.NEW_ROUTE) },
+                    enabled = !routeActive,
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
+                    shape = RoundedCornerShape(20.dp),
+                ) {
+                    Text(
+                        if (routeActive) "Ruta activa en curso" else "Iniciar nueva ruta",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             }
         }
