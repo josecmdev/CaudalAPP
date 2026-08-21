@@ -258,6 +258,10 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 stores = appState.stores,
                 accounts = appState.outstandingAccounts,
                 previousRoutes = appState.completedRoutes,
+                onStartRoute = {
+                    appState.destination = HomeDestination.NEW_ROUTE
+                    appState.mapVisible = false
+                },
                 onExitMap = {
                     mapMenuOpen = true
                 },
@@ -447,19 +451,6 @@ private fun MapOptionsDialog(
                             }
                         }
                     }
-                }
-                Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = { onDestinationSelected(HomeDestination.NEW_ROUTE) },
-                    enabled = !routeActive,
-                    modifier = Modifier.fillMaxWidth().height(64.dp),
-                    shape = RoundedCornerShape(20.dp),
-                ) {
-                    Text(
-                        if (routeActive) "Ruta activa en curso" else "Iniciar nueva ruta",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
                 }
             }
         }
