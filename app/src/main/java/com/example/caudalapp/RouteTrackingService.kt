@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import com.example.caudalapp.domain.RouteTrackPoint
 import com.example.caudalapp.domain.RouteElapsedPolicy
 import com.example.caudalapp.domain.GeoPoint
+import com.example.caudalapp.domain.AdaptiveGpsPolicy
 import com.example.caudalapp.persistence.RouteTrackStore
 import java.io.File
 
@@ -31,6 +32,8 @@ class RouteTrackingService : Service(), LocationListener {
     private var activeRouteId: String? = null
     private var lastSavedAtElapsedMillis = 0L
     private var locationIntervalMillis = 1_000L
+    private var configuredMovingIntervalSeconds = 1
+    private var lastMovementAtElapsedMillis = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -50,14 +53,16 @@ class RouteTrackingService : Service(), LocationListener {
 
         startForeground(NOTIFICATION_ID, trackingNotification())
         activeRouteId = routeId
-        locationIntervalMillis = (intent?.getIntExtra(EXTRA_INTERVAL_SECONDS, -1)
+        configuredMovingIntervalSeconds = (intent?.getIntExtra(EXTRA_INTERVAL_SECONDS, -1)
             ?.takeIf { it > 0 }
             ?: getSharedPreferences(PREFERENCES, MODE_PRIVATE).getInt(KEY_INTERVAL_SECONDS, 1))
-            .coerceIn(1, 10) * 1_000L
+            .coerceIn(1, 10)
+        locationIntervalMillis = configuredMovingIntervalSeconds * 1_000L
+        lastMovementAtElapsedMillis = SystemClock.elapsedRealtime()
         ensureElapsedClock(this, routeId)
         getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
             .putString(KEY_ACTIVE_ROUTE_ID, routeId)
-            .putInt(KEY_INTERVAL_SECONDS, (locationIntervalMillis / 1_000L).toInt())
+            .putInt(KEY_INTERVAL_SECONDS, configuredMovingIntervalSeconds)
             .apply()
         beginLocationUpdates()
         return START_STICKY
@@ -99,6 +104,17 @@ class RouteTrackingService : Service(), LocationListener {
 
     override fun onLocationChanged(location: Location) {
         val nowElapsed = SystemClock.elapsedRealtime()
+        if (AdaptiveGpsPolicy.isMoving(location.speed.takeIf { location.hasSpeed() })) {
+            lastMovementAtElapsedMillis = nowElapsed
+        }
+        val desiredInterval = AdaptiveGpsPolicy.intervalMillis(
+            configuredMovingSeconds = configuredMovingIntervalSeconds,
+            millisecondsSinceMovement = nowElapsed - lastMovementAtElapsedMillis,
+        )
+        if (desiredInterval != locationIntervalMillis) {
+            locationIntervalMillis = desiredInterval
+            beginLocationUpdates()
+        }
         if (lastSavedAtElapsedMillis != 0L &&
             nowElapsed - lastSavedAtElapsedMillis < (locationIntervalMillis * 9L / 10L)
         ) return
