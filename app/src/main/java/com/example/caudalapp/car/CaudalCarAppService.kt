@@ -2,10 +2,6 @@ package com.example.caudalapp.car
 
 import android.content.Intent
 import android.content.pm.ApplicationInfo
-import android.os.Handler
-import android.os.Looper
-import androidx.lifecycle.DefaultLifecycleObserver
-import androidx.lifecycle.LifecycleOwner
 import com.example.caudalapp.RouteTrackingService
 import androidx.car.app.CarAppService
 import androidx.car.app.CarContext
@@ -55,31 +51,6 @@ private class CarStoresScreen(
     carContext: CarContext,
     private val repository: CaudalCarRepository,
 ) : Screen(carContext) {
-    private val clockHandler = Handler(Looper.getMainLooper())
-    private val clockTick = object : Runnable {
-        override fun run() {
-            invalidate()
-            clockHandler.postDelayed(this, 1_000L)
-        }
-    }
-
-    init {
-        lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) {
-                clockHandler.removeCallbacks(clockTick)
-                clockHandler.post(clockTick)
-            }
-
-            override fun onStop(owner: LifecycleOwner) {
-                clockHandler.removeCallbacks(clockTick)
-            }
-
-            override fun onDestroy(owner: LifecycleOwner) {
-                clockHandler.removeCallbacks(clockTick)
-            }
-        })
-    }
-
     override fun onGetTemplate(): Template {
         val snapshot = repository.snapshot()
         if (snapshot.stores.isEmpty()) {
