@@ -4,9 +4,11 @@ object SuggestedPricePolicy {
     fun forQuantity(product: Product, quantity: Int): Int? {
         if (quantity <= 0) return null
         return when (product.id) {
-            // La tarifa habitual se cobra por grupos completos de 18 bolsas.
-            // Una cantidad parcial queda libre para evitar inventar un precio.
-            ProductCatalog.BAGS.id -> quantity.takeIf { it % 18 == 0 }?.let { it / 18 * 50 }
+            ProductCatalog.BAGS.id -> when {
+                quantity == 8 -> 25
+                quantity % 18 == 0 -> quantity / 18 * 50
+                else -> null
+            }
             ProductCatalog.WATER_JUG.id -> quantity * 8
             else -> product.defaultSuggestedTotal
         }

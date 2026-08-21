@@ -577,7 +577,8 @@ private fun RouteSummaryPanel(
 ) {
     var drag by remember { mutableStateOf(Offset.Zero) }
     Card(
-        modifier = modifier.padding(if (expanded) 12.dp else 4.dp).animateContentSize().pointerInput(landscape, expanded) {
+        modifier = modifier.padding(if (landscape) 0.dp else if (expanded) 12.dp else 4.dp)
+            .animateContentSize().pointerInput(landscape, expanded) {
             detectDragGestures(
                 onDragStart = { drag = Offset.Zero },
                 onDragEnd = {
@@ -592,7 +593,7 @@ private fun RouteSummaryPanel(
                 onDrag = { change, amount -> change.consume(); drag += amount },
             )
         },
-        shape = RoundedCornerShape(26.dp),
+        shape = if (landscape) RoundedCornerShape(0.dp) else RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = .94f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {

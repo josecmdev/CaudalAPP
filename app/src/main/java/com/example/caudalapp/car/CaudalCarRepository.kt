@@ -34,7 +34,7 @@ sealed interface CarOperationResult {
 }
 
 object CarBagPresetPolicy {
-    val quantities = listOf(18, 36, 54, 72)
+    val quantities = listOf(8, 18, 36, 54, 72)
 
     fun totalFor(quantity: Int): Int? = SuggestedPricePolicy.forQuantity(ProductCatalog.BAGS, quantity)
 }

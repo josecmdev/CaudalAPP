@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -44,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -55,6 +57,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.caudalapp.ui.theme.CaudalAPPTheme
 import com.example.caudalapp.domain.ActiveRoute
 import com.example.caudalapp.domain.StoreDirectory
@@ -177,6 +181,12 @@ class CaudalViewModel : ViewModel() {
 private fun CaudalApp(appState: CaudalViewModel) {
     val context = LocalContext.current.applicationContext
     var completionTransitionId by remember { mutableIntStateOf(0) }
+    var mapMenuOpen by rememberSaveable { mutableStateOf(false) }
+    val returnToMap = {
+        appState.storeFocusId = null
+        appState.destination = null
+        appState.mapVisible = true
+    }
     LaunchedEffect(appState) {
         appState.completionTransitionEvents().collect { completionTransitionId++ }
     }
@@ -189,8 +199,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 stores = appState.stores,
                 previousRoutes = appState.completedRoutes,
                 onExitMap = {
-                    appState.destination = null
-                    appState.mapVisible = false
+                    mapMenuOpen = true
                 },
                 closeRequested = appState.routeCloseRequested,
                 onCloseRequestConsumed = { appState.routeCloseRequested = false },
@@ -246,13 +255,8 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 stores = appState.stores,
                 accounts = appState.outstandingAccounts,
                 previousRoutes = appState.completedRoutes,
-                onStartRoute = {
-                    appState.destination = HomeDestination.NEW_ROUTE
-                    appState.mapVisible = false
-                },
                 onExitMap = {
-                    appState.destination = null
-                    appState.mapVisible = false
+                    mapMenuOpen = true
                 },
                 onStateChanged = appState::persist,
                 onAccountsChanged = { updated, adjustment ->
@@ -310,7 +314,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
                     appState.completedRoutes.remove(record)
                     appState.persist()
                 },
-                onBack = { appState.destination = null },
+                onBack = returnToMap,
                 modifier = Modifier.padding(padding),
             )
         } else if (appState.destination == HomeDestination.ACCOUNTS) {
@@ -322,7 +326,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
                     appState.storeFocusId = store.id
                     appState.destination = HomeDestination.STORES
                 },
-                onBack = { appState.destination = null },
+                onBack = returnToMap,
                 modifier = Modifier.padding(padding),
             )
         } else if (appState.destination == HomeDestination.STORES) {
@@ -330,7 +334,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 stores = appState.stores,
                 accounts = appState.outstandingAccounts,
                 initialFocus = appState.storeFocusId?.let { appState.stores.get(it)?.location },
-                onBack = { appState.storeFocusId = null; appState.destination = null },
+                onBack = returnToMap,
                 onStateChanged = appState::persist,
                 onAccountsChanged = { updated, adjustment ->
                     appState.outstandingAccounts = updated
@@ -343,31 +347,106 @@ private fun CaudalApp(appState: CaudalViewModel) {
         } else if (appState.destination == HomeDestination.PRODUCTS) {
             ProductsScreen(
                 directory = appState.products,
-                onBack = { appState.destination = null },
+                onBack = returnToMap,
                 onStateChanged = appState::persist,
                 modifier = Modifier.padding(padding),
             )
         } else if (appState.destination == HomeDestination.OFFLINE_MAP) {
             OfflineMapScreen(
-                onBack = { appState.destination = null },
+                onBack = returnToMap,
                 modifier = Modifier.padding(padding),
             )
         } else if (appState.destination == HomeDestination.SETTINGS) {
             SettingsScreen(
                 settings = appState.settings,
                 onSettingsChanged = appState::updateSettings,
-                onBack = { appState.destination = null },
+                onBack = returnToMap,
                 modifier = Modifier.padding(padding),
             )
         } else {
             FirstIterationPlaceholder(
                 destination = appState.destination!!,
-                onBack = { appState.destination = null },
+                onBack = returnToMap,
                 modifier = Modifier.padding(padding),
             )
         }
       }
+      if (mapMenuOpen) {
+          MapOptionsDialog(
+              routeActive = appState.activeRoute != null,
+              onDismiss = { mapMenuOpen = false },
+              onDestinationSelected = { destination ->
+                  mapMenuOpen = false
+                  appState.storeFocusId = null
+                  appState.destination = destination
+                  appState.mapVisible = false
+              },
+          )
+      }
       CompletionDropTransition(completionTransitionId)
+    }
+}
+
+@Composable
+private fun MapOptionsDialog(
+    routeActive: Boolean,
+    onDismiss: () -> Unit,
+    onDestinationSelected: (HomeDestination) -> Unit,
+) {
+    val destinations = HomeDestination.entries.filter { destination ->
+        destination != HomeDestination.NEW_ROUTE || !routeActive
+    }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(.9f).fillMaxHeight(.88f).widthIn(max = 920.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 14.dp),
+        ) {
+            Column(modifier = Modifier.fillMaxSize().padding(22.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column {
+                        Text("Caudal App", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (routeActive) "La ruta sigue activa en segundo plano" else "Mapa de trabajo activo",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = onDismiss) { Text("Volver al mapa") }
+                }
+                Spacer(Modifier.height(18.dp))
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    val columns = if (maxWidth >= 700.dp) 2 else 1
+                    Column(
+                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        destinations.chunked(columns).forEach { items ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                items.forEach { item ->
+                                    DestinationCard(
+                                        item = item,
+                                        onClick = { onDestinationSelected(item) },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                                if (items.size < columns) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
