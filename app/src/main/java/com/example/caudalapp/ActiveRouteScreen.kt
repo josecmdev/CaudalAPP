@@ -49,6 +49,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import com.example.caudalapp.domain.ActiveRoute
 import com.example.caudalapp.domain.GeoPoint
 import com.example.caudalapp.domain.Store
@@ -378,6 +382,7 @@ fun ActiveRouteScreen(
             onLocationPermissionGranted = onLocationPermissionGranted,
             automaticFollow = settings.automaticMapFollow,
             gpsIntervalSeconds = settings.gpsIntervalSeconds,
+            mapStyle = settings.mapStyle,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -386,10 +391,17 @@ fun ActiveRouteScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(shape = RoundedCornerShape(18.dp), shadowElevation = 4.dp) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp)) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = .94f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp)) {
                     Text(route.name, fontWeight = FontWeight.Bold)
-                    Text(formatRouteDuration(elapsedMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        formatRouteDuration(elapsedMillis),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -406,6 +418,8 @@ fun ActiveRouteScreen(
             key(ledgerRevision) {
                 RouteSummaryPanel(
                     route = route,
+                    elapsedMillis = elapsedMillis,
+                    landscape = true,
                     expanded = panelExpanded,
                     onToggle = { panelExpanded = !panelExpanded },
                     onAccountsClick = { accountsOpen = true },
@@ -414,13 +428,15 @@ fun ActiveRouteScreen(
                         .align(Alignment.CenterEnd)
                         .fillMaxHeight()
                         .padding(top = 82.dp)
-                        .width(if (panelExpanded) 270.dp else 200.dp),
+                        .width(if (panelExpanded) 270.dp else 68.dp),
                 )
             }
         } else if (!placingStore) {
             key(ledgerRevision) {
                 RouteSummaryPanel(
                     route = route,
+                    elapsedMillis = elapsedMillis,
+                    landscape = false,
                     expanded = panelExpanded,
                     onToggle = { panelExpanded = !panelExpanded },
                     onAccountsClick = { accountsOpen = true },
@@ -436,7 +452,7 @@ fun ActiveRouteScreen(
                 .align(Alignment.BottomStart)
                 .padding(
                     start = 20.dp,
-                    bottom = if (landscape) 92.dp else if (panelExpanded) 282.dp else 164.dp,
+                    bottom = if (landscape) 92.dp else if (panelExpanded) 282.dp else 126.dp,
                 ),
             enter = fadeIn() + slideInVertically { it / 2 },
             exit = fadeOut() + slideOutVertically { it / 2 },
@@ -473,7 +489,7 @@ fun ActiveRouteScreen(
                 .align(Alignment.BottomStart)
                 .padding(
                     start = 20.dp,
-                    bottom = if (landscape) 20.dp else if (panelExpanded) 210.dp else 92.dp,
+                    bottom = if (landscape) 20.dp else if (panelExpanded) 210.dp else 58.dp,
                 )
                 .size(60.dp)
                 .graphicsLayer { rotationZ = rotation },
@@ -551,25 +567,59 @@ private fun RouteActionButton(label: String, onClick: () -> Unit) {
 @Composable
 private fun RouteSummaryPanel(
     route: ActiveRoute,
+    elapsedMillis: Long,
+    landscape: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
     onAccountsClick: () -> Unit,
     onAuditClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var drag by remember { mutableStateOf(Offset.Zero) }
     Card(
-        modifier = modifier.padding(12.dp).animateContentSize(),
+        modifier = modifier.padding(if (expanded) 12.dp else 4.dp).animateContentSize().pointerInput(landscape, expanded) {
+            detectDragGestures(
+                onDragStart = { drag = Offset.Zero },
+                onDragEnd = {
+                    if (landscape) {
+                        if (drag.x < -35f && !expanded) onToggle()
+                        if (drag.x > 35f && expanded) onToggle()
+                    } else {
+                        if (drag.y < -35f && !expanded) onToggle()
+                        if (drag.y > 35f && expanded) onToggle()
+                    }
+                },
+                onDrag = { change, amount -> change.consume(); drag += amount },
+            )
+        },
         shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = .94f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
     ) {
-        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Efectivo", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        if (!expanded) {
+            Box(
+                modifier = Modifier.fillMaxSize().clickable(onClick = onToggle).padding(6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (landscape) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("‹", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Ruta", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                    }
+                } else {
+                    Text("Ruta e inventario ▲", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
             }
-            AnimatedVisibility(visible = expanded) {
+        } else {
+          Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            AnimatedVisibility(visible = true) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(route.name, fontWeight = FontWeight.Bold)
+                    Text(formatRouteDuration(elapsedMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Efectivo", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
                     route.ledger.products().filterNot { it.archived }.forEach { product ->
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(product.name)
@@ -585,8 +635,11 @@ private fun RouteSummaryPanel(
                 }
             }
             TextButton(onClick = onToggle, modifier = Modifier.fillMaxWidth()) {
-                Text(if (expanded) "Ocultar ▲" else "Ver inventario ▼")
+                Text(
+                    if (landscape) "Ocultar ›" else "Ocultar ▼",
+                )
             }
+          }
         }
     }
 }
