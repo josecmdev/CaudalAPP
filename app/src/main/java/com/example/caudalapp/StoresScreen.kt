@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -32,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.text.input.KeyboardType
+import com.example.caudalapp.domain.AccountSettlementPolicy
 import com.example.caudalapp.domain.GeoPoint
 import com.example.caudalapp.domain.Store
 import com.example.caudalapp.domain.StoreAccountState
@@ -39,6 +45,8 @@ import com.example.caudalapp.domain.StoreChangeResult
 import com.example.caudalapp.domain.StoreDirectory
 import com.example.caudalapp.domain.StoreMarkerState
 import com.example.caudalapp.domain.StoreObligations
+import com.example.caudalapp.domain.StoreAccountAdjustment
+import com.example.caudalapp.domain.StoreAccountAdjustmentType
 
 @Composable
 fun StoresScreen(
@@ -47,6 +55,8 @@ fun StoresScreen(
     initialFocus: GeoPoint? = null,
     onBack: () -> Unit,
     onStateChanged: () -> Unit,
+    onAccountsChanged: (List<StoreAccountState>, StoreAccountAdjustment) -> Unit,
+    productName: (String) -> String,
     modifier: Modifier = Modifier,
 ) {
     var revision by remember { mutableIntStateOf(0) }
@@ -58,6 +68,7 @@ fun StoresScreen(
     var editingStore by remember { mutableStateOf<Store?>(null) }
     var archiveCandidate by remember { mutableStateOf<Store?>(null) }
     var archivedOpen by remember { mutableStateOf(false) }
+    var managingAccountStore by remember { mutableStateOf<Store?>(null) }
 
     namingLocation?.let { location ->
         StoreNameDialog(
@@ -84,8 +95,65 @@ fun StoresScreen(
                 center = store.location
                 placementMode = true
             },
+            onManageAccount = if (accounts.any { it.storeId == store.id }) {
+                { selectedStore = null; managingAccountStore = store }
+            } else null,
             onArchive = { selectedStore = null; archiveCandidate = store },
         )
+    }
+    managingAccountStore?.let { store ->
+        val account = accounts.firstOrNull { it.storeId == store.id }
+        if (account == null) {
+            managingAccountStore = null
+        } else {
+            StoreAccountManagementDialog(
+                store = store,
+                account = account,
+                productName = productName,
+                onDismiss = { managingAccountStore = null },
+                onPayment = { amount ->
+                    val updated = AccountSettlementPolicy.registerPayment(account, amount)
+                    onAccountsChanged(
+                        accounts.replaceAccount(updated),
+                        StoreAccountAdjustment(
+                            storeId = store.id,
+                            type = StoreAccountAdjustmentType.MONEY_PAYMENT,
+                            amount = amount,
+                        ),
+                    )
+                    managingAccountStore = null
+                    revision++
+                },
+                onDeliveryCompleted = { productId, quantity ->
+                    val updated = AccountSettlementPolicy.completeDelivery(account, productId)
+                    onAccountsChanged(
+                        accounts.replaceAccount(updated),
+                        StoreAccountAdjustment(
+                            storeId = store.id,
+                            type = StoreAccountAdjustmentType.DELIVERY_COMPLETED,
+                            productId = productId,
+                            quantity = quantity,
+                        ),
+                    )
+                    managingAccountStore = null
+                    revision++
+                },
+                onContainersReceived = { productId, quantity ->
+                    val updated = AccountSettlementPolicy.receiveContainers(account, productId)
+                    onAccountsChanged(
+                        accounts.replaceAccount(updated),
+                        StoreAccountAdjustment(
+                            storeId = store.id,
+                            type = StoreAccountAdjustmentType.CONTAINER_RETURN,
+                            productId = productId,
+                            quantity = quantity,
+                        ),
+                    )
+                    managingAccountStore = null
+                    revision++
+                },
+            )
+        }
     }
     editingStore?.let { store ->
         EditStoreDialog(
@@ -213,6 +281,7 @@ private fun StoreAdminDialog(
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
     onMove: () -> Unit,
+    onManageAccount: (() -> Unit)?,
     onArchive: () -> Unit,
 ) {
     AlertDialog(
@@ -229,13 +298,90 @@ private fun StoreAdminDialog(
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
+                if (onManageAccount != null) {
+                    Button(onClick = onManageAccount, modifier = Modifier.fillMaxWidth()) {
+                        Text("Gestionar pagos y pendientes")
+                    }
+                }
                 OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) { Text("Editar datos") }
                 OutlinedButton(onClick = onMove, modifier = Modifier.fillMaxWidth()) { Text("Mover en el mapa") }
-                TextButton(onClick = onArchive, modifier = Modifier.fillMaxWidth()) { Text("Archivar tienda") }
+                TextButton(onClick = onArchive, modifier = Modifier.fillMaxWidth()) { Text("Eliminar del mapa") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
     )
+}
+
+private fun List<StoreAccountState>.replaceAccount(updated: StoreAccountState): List<StoreAccountState> =
+    mapNotNull { current ->
+        if (current.storeId != updated.storeId) current
+        else updated.takeIf(AccountSettlementPolicy::hasPending)
+    }
+
+@Composable
+private fun StoreAccountManagementDialog(
+    store: Store,
+    account: StoreAccountState,
+    productName: (String) -> String,
+    onDismiss: () -> Unit,
+    onPayment: (Int) -> Unit,
+    onDeliveryCompleted: (String, Int) -> Unit,
+    onContainersReceived: (String, Int) -> Unit,
+) {
+    val moneyDue = AccountSettlementPolicy.moneyDue(account)
+    var paymentText by remember(account.storeId, moneyDue) { mutableStateOf(moneyDue.toString()) }
+    AlertDialog(
+        onDismissRequest = {},
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+        title = { Text("Cuenta de ${store.name}", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (moneyDue > 0) {
+                    Text("Dinero pendiente: Q$moneyDue", fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = paymentText,
+                        onValueChange = { paymentText = it.filter(Char::isDigit).take(8) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Cantidad recibida") },
+                        prefix = { Text("Q ") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    Button(
+                        onClick = { paymentText.toIntOrNull()?.let(onPayment) },
+                        enabled = paymentText.toIntOrNull() in 1..moneyDue,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (paymentText.toIntOrNull() == moneyDue) "Marcar como pagado" else "Registrar pago parcial") }
+                }
+                account.pendingDeliveries.filterValues { it > 0 }.forEach { (productId, quantity) ->
+                    AccountPendingRow(
+                        label = "${productName(productId)} por entregar: $quantity",
+                        action = "Marcar entregado",
+                        onClick = { onDeliveryCompleted(productId, quantity) },
+                    )
+                }
+                account.pendingContainers.filterValues { it > 0 }.forEach { (productId, quantity) ->
+                    AccountPendingRow(
+                        label = "Envases de ${productName(productId)}: $quantity",
+                        action = "Marcar recibidos",
+                        onClick = { onContainersReceived(productId, quantity) },
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
+    )
+}
+
+@Composable
+private fun AccountPendingRow(label: String, action: String, onClick: () -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(label, fontWeight = FontWeight.SemiBold)
+        OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(action) }
+    }
 }
 
 @Composable
@@ -266,17 +412,17 @@ private fun ArchiveStoreDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Archivar ${store.name}?") },
+        title = { Text("¿Eliminar ${store.name} del mapa?") },
         text = {
             Text(
                 if (obligations.hasAny) {
-                    "La tienda tiene deuda, envases o entregas pendientes. Se ocultará del mapa, pero sus cuentas y ventas seguirán guardadas."
+                    "La tienda tiene deuda, envases o entregas pendientes. Se ocultará del mapa, pero sus cuentas y ventas seguirán guardadas y podrás restaurarla."
                 } else {
-                    "Se ocultará del mapa. Podrás restaurarla después."
+                    "Se ocultará del mapa sin borrar su historial. Podrás restaurarla después."
                 },
             )
         },
-        confirmButton = { Button(onClick = onConfirm) { Text("Archivar") } },
+        confirmButton = { Button(onClick = onConfirm) { Text("Eliminar del mapa") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
 }

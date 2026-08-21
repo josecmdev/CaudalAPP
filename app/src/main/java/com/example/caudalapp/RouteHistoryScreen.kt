@@ -2,6 +2,7 @@ package com.example.caudalapp
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -97,6 +99,7 @@ fun RouteHistoryScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(routes.asReversed(), key = { it.finishedAtEpochMillis }) { record ->
@@ -108,10 +111,12 @@ fun RouteHistoryScreen(
                     )
                     SwipeToDismissBox(
                         state = dismissState,
+                        modifier = Modifier.clip(RoundedCornerShape(22.dp)),
                         enableDismissFromStartToEnd = false,
                         backgroundContent = {
                             Box(
-                                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.error)
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp))
+                                    .background(MaterialTheme.colorScheme.error)
                                     .padding(horizontal = 24.dp),
                                 contentAlignment = Alignment.CenterEnd,
                             ) {
