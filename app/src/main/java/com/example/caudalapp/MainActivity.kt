@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -179,7 +180,8 @@ class CaudalViewModel : ViewModel() {
 
 @Composable
 private fun CaudalApp(appState: CaudalViewModel) {
-    val context = LocalContext.current.applicationContext
+    val activityContext = LocalContext.current
+    val context = activityContext.applicationContext
     var completionTransitionId by remember { mutableIntStateOf(0) }
     var mapMenuOpen by rememberSaveable { mutableStateOf(false) }
     val returnToMap = {
@@ -238,6 +240,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
                     appState.activeRoute = null
                     appState.destination = null
                     appState.mapVisible = true
+                    appState.showCompletionTransition()
                     appState.persist()
                 },
                 onStateChanged = appState::persist,
@@ -360,6 +363,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
             SettingsScreen(
                 settings = appState.settings,
                 onSettingsChanged = appState::updateSettings,
+                onExportDiagnostics = { DiagnosticReporter.share(activityContext) },
                 onBack = returnToMap,
                 modifier = Modifier.padding(padding),
             )
@@ -393,9 +397,7 @@ private fun MapOptionsDialog(
     onDismiss: () -> Unit,
     onDestinationSelected: (HomeDestination) -> Unit,
 ) {
-    val destinations = HomeDestination.entries.filter { destination ->
-        destination != HomeDestination.NEW_ROUTE || !routeActive
-    }
+    val destinations = HomeDestination.entries.filter { it != HomeDestination.NEW_ROUTE }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -404,7 +406,8 @@ private fun MapOptionsDialog(
             modifier = Modifier.fillMaxWidth(.9f).fillMaxHeight(.88f).widthIn(max = 920.dp),
             shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 14.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         ) {
             Column(modifier = Modifier.fillMaxSize().padding(22.dp)) {
                 Row(
@@ -443,6 +446,16 @@ private fun MapOptionsDialog(
                                 if (items.size < columns) Spacer(Modifier.weight(1f))
                             }
                         }
+                    }
+                }
+                if (!routeActive) {
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        onClick = { onDestinationSelected(HomeDestination.NEW_ROUTE) },
+                        modifier = Modifier.fillMaxWidth().height(64.dp),
+                        shape = RoundedCornerShape(20.dp),
+                    ) {
+                        Text("Iniciar nueva ruta", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
