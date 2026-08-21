@@ -1,0 +1,12 @@
+*.iml
+.gradle
+.kotlin/
+.tmp-maplibre/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
