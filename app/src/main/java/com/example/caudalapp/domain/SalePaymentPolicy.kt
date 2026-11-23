@@ -8,7 +8,7 @@ object SalePaymentPolicy {
         hasPendingDelivery: Boolean,
     ): Int {
         require(invoiceTotal >= 0)
-        if (hasPendingDelivery) return 0
+        // Jose cobra al momento aunque falte producto por entregar; el fiado sigue siendo opcional.
         return if (creditEnabled) typedAmount ?: 0 else invoiceTotal
     }
 }

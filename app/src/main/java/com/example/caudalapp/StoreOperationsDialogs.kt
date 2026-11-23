@@ -251,12 +251,13 @@ fun StoreSaleDialog(
                         if (hasPotentialPending) {
                             Text(
                                 "Lo que no hay en el camión queda por entregar: el inventario se verá en negativo " +
-                                    "y se descuenta al recargar en sede. Esta factura se cobra al completar la entrega.",
+                                    "y se descuenta al recargar en sede.",
                                 modifier = Modifier.padding(top = 7.dp),
                                 color = MaterialTheme.colorScheme.tertiary,
                                 fontWeight = FontWeight.SemiBold,
                             )
-                        } else {
+                        }
+                        run {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
