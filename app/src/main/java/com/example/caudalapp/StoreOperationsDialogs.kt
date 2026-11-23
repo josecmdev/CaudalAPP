@@ -313,8 +313,7 @@ fun StoreSaleDialog(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(line.product.name, fontWeight = FontWeight.SemiBold)
                             Text(
-                                "${line.requested} × Q${line.total / line.requested}" +
-                                    if (line.total % line.requested != 0) " aprox." else "",
+                                "${line.requested} ${if (line.requested == 1) "unidad" else "unidades"}",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall,
                             )

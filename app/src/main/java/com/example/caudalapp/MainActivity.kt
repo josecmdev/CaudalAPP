@@ -504,8 +504,8 @@ private fun DestinationCard(
                 contentAlignment = Alignment.Center,
             ) {
                 // Cuentas usa la Q de quetzal: no hay ícono de moneda local.
-                item.icon?.let { Icon(it, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface) }
-                    ?: Text("Q", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                item.icon?.let { Icon(it, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                    ?: Text("Q", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             }
             Column(modifier = Modifier.padding(start = 14.dp).weight(1f)) {
                 Text(item.title, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)

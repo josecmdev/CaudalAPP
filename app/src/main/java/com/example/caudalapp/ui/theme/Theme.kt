@@ -11,10 +11,10 @@ import androidx.compose.ui.unit.dp
 import com.example.caudalapp.AppTheme
 
 private val CaudalColorScheme = lightColorScheme(
-    primary = Ink,
+    primary = Blue,
     onPrimary = Sheet,
-    primaryContainer = Chip,
-    onPrimaryContainer = Ink,
+    primaryContainer = BlueWash,
+    onPrimaryContainer = BlueDeep,
     secondary = Money,
     onSecondary = Sheet,
     secondaryContainer = Chip,
@@ -38,9 +38,9 @@ private val CaudalColorScheme = lightColorScheme(
 )
 
 private val CaudalDarkColorScheme = darkColorScheme(
-    primary = NightInk,
+    primary = NightBlue,
     onPrimary = NightPaper,
-    primaryContainer = NightChip,
+    primaryContainer = NightBlueWash,
     onPrimaryContainer = NightInk,
     secondary = NightMoney,
     onSecondary = NightPaper,

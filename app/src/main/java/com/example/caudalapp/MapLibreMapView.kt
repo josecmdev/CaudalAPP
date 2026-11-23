@@ -232,7 +232,7 @@ class CaudalMapController {
         )
         currentStyle.addLayer(
             CircleLayer(STORE_CLUSTER_LAYER_ID, STORE_SOURCE_ID).withProperties(
-                circleColor("#1A1D21"),
+                circleColor("#1D4F91"),
                 circleRadius(22f),
                 circleStrokeColor("#FFFFFF"),
                 circleStrokeWidth(3f),
