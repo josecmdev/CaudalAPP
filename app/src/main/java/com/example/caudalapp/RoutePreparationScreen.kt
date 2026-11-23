@@ -1,5 +1,7 @@
 package com.example.caudalapp
 
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -194,7 +196,7 @@ private fun RouteDetailsCard(
                     selected = routeName == day,
                     onClick = { onRouteNameChange(day) },
                     label = { Text(day, modifier = Modifier.padding(vertical = 8.dp)) },
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(10.dp),
                 )
             }
         }
@@ -206,7 +208,7 @@ private fun RouteDetailsCard(
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = { onNext() }),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(10.dp),
         )
 
         SectionLabel("Sencillo inicial", Modifier.padding(top = 8.dp))
@@ -220,7 +222,7 @@ private fun RouteDetailsCard(
             keyboardActions = KeyboardActions(onNext = { onNext() }),
             singleLine = true,
             textStyle = MaterialTheme.typography.titleLarge,
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(10.dp),
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             QuickCash.forEach { amount ->
@@ -228,7 +230,7 @@ private fun RouteDetailsCard(
                     selected = initialCash == amount.toString(),
                     onClick = { onInitialCashChange(amount.toString()) },
                     label = { Text("Q$amount", modifier = Modifier.padding(vertical = 8.dp)) },
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(10.dp),
                 )
             }
         }
@@ -274,7 +276,7 @@ private fun TruckLoadCard(
                     ),
                     keyboardActions = KeyboardActions(onNext = { onNext() }, onDone = { onDone() }),
                     singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(10.dp),
                 )
                 RoundButton("+", "Sumar ${product.name}", tonal = true) { onQuantityChange(product, QuantityInput.step(quantity, 1)) }
             }
@@ -284,7 +286,8 @@ private fun TruckLoadCard(
 
 @Composable
 private fun StartRouteBar(summary: String, errorMessage: String?, starting: Boolean, onStart: () -> Unit) {
-    Surface(modifier = Modifier.fillMaxWidth(), shadowElevation = 10.dp, color = MaterialTheme.colorScheme.surface) {
+    Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -299,9 +302,10 @@ private fun StartRouteBar(summary: String, errorMessage: String?, starting: Bool
             Button(
                 onClick = onStart,
                 enabled = !starting,
-                shape = RoundedCornerShape(20.dp),
-                contentPadding = PaddingValues(horizontal = 32.dp, vertical = 16.dp),
-            ) { Text(if (starting) "Iniciando…" else "Iniciar ruta", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+                modifier = Modifier.height(60.dp).widthIn(min = 220.dp),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 28.dp),
+            ) { Text(if (starting) "Iniciando…" else "Iniciar ruta  →", fontWeight = FontWeight.Bold, fontSize = 19.sp) }
         }
     }
 }
@@ -310,7 +314,7 @@ private fun StartRouteBar(summary: String, errorMessage: String?, starting: Bool
 private fun PrepCard(title: String, subtitle: String? = null, content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().widthIn(max = 760.dp),
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -325,7 +329,7 @@ private fun PrepCard(title: String, subtitle: String? = null, content: @Composab
 
 @Composable
 private fun SectionLabel(text: String, modifier: Modifier = Modifier) {
-    Text(text, modifier = modifier, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    Text(text, modifier = modifier, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -333,11 +337,11 @@ private fun RoundButton(symbol: String, description: String, tonal: Boolean = fa
     val modifier = Modifier.size(52.dp).semantics { contentDescription = description }
     val padding = PaddingValues(0.dp)
     if (tonal) {
-        FilledTonalButton(onClick = onClick, modifier = modifier, shape = CircleShape, contentPadding = padding) {
+        FilledTonalButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(12.dp), contentPadding = padding) {
             Text(symbol, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         }
     } else {
-        Button(onClick = onClick, modifier = modifier, shape = CircleShape, contentPadding = padding) {
+        Button(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(12.dp), contentPadding = padding) {
             Text(symbol, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         }
     }

@@ -633,7 +633,7 @@ private fun RouteSummaryPanel(
                 onDrag = { change, amount -> change.consume(); drag += amount },
             )
         },
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -654,7 +654,7 @@ private fun RouteSummaryPanel(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
                         Text(
                             route.ledger.products().filterNot { it.archived }
                                 .joinToString("  ·  ") { "${it.name} ${route.ledger.displayStock(it.id)}" },
@@ -685,7 +685,7 @@ private fun RouteSummaryPanel(
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Efectivo esperado", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Text("En el camión", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
