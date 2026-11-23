@@ -46,6 +46,7 @@ fun SettingsScreen(
     routeActive: Boolean = false,
     onExportData: suspend () -> Unit = {},
     onRestoreData: suspend (Uri) -> Unit = {},
+    onOpenProducts: () -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -68,6 +69,9 @@ fun SettingsScreen(
             ChoiceRow(AppTheme.entries, settings.theme, { it.label }) { onSettingsChanged(settings.copy(theme = it)) }
             Text("Estilo del mapa", fontWeight = FontWeight.SemiBold)
             ChoiceRow(AppMapStyle.entries, settings.mapStyle, { it.label }) { onSettingsChanged(settings.copy(mapStyle = it)) }
+        }
+        SettingsCard("Productos y precios", "Agrega productos o cambia el precio sugerido de cada uno") {
+            Button(onClick = onOpenProducts, modifier = Modifier.fillMaxWidth()) { Text("Editar productos y precios") }
         }
         SettingsCard("Seguimiento GPS", "Frecuencia de actualización durante una ruta") {
             ChoiceRow(listOf(1, 3, 5, 10), settings.gpsIntervalSeconds, { "${it} s" }) {

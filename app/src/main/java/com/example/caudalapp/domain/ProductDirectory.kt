@@ -78,8 +78,9 @@ class ProductDirectory(
     fun allProducts(): List<Product> = products.values.toList()
 
     companion object {
+        /** Los productos nuevos del catálogo (como Refresco) también aparecen en tablets con datos guardados. */
         fun restore(products: List<Product>): ProductDirectory = ProductDirectory(
-            initialProducts = products.ifEmpty { ProductCatalog.initialProducts },
+            initialProducts = products + ProductCatalog.initialProducts.filter { catalog -> products.none { it.id == catalog.id } },
         )
     }
 }

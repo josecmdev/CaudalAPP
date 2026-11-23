@@ -16,6 +16,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -62,6 +66,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -458,7 +463,8 @@ fun ActiveRouteScreen(
                     onToggle = { panelExpanded = !panelExpanded },
                     onAccountsClick = { accountsOpen = true },
                     onAuditClick = { auditOpen = true },
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                    modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 620.dp).fillMaxWidth()
+                        .heightIn(max = if (panelExpanded) 460.dp else 72.dp),
                 )
             }
         }
@@ -627,14 +633,15 @@ private fun RouteSummaryPanel(
                 onDrag = { change, amount -> change.consume(); drag += amount },
             )
         },
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         if (!expanded) {
             Box(
-                modifier = Modifier.fillMaxSize().clickable(onClick = onToggle).padding(6.dp),
+                // En vertical la tarjeta no tiene alto fijo: fillMaxSize la estiraba a toda la pantalla aun cerrada.
+                modifier = (if (landscape) Modifier.fillMaxSize() else Modifier.fillMaxWidth()).clickable(onClick = onToggle).padding(6.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 if (landscape) {
@@ -647,7 +654,7 @@ private fun RouteSummaryPanel(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
                         Text(
                             route.ledger.products().filterNot { it.archived }
                                 .joinToString("  ·  ") { "${it.name} ${route.ledger.displayStock(it.id)}" },
@@ -660,7 +667,10 @@ private fun RouteSummaryPanel(
                 }
             }
         } else {
-            Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(route.name, fontWeight = FontWeight.Bold)
@@ -675,7 +685,7 @@ private fun RouteSummaryPanel(
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Efectivo esperado", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Text("En el camión", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -760,11 +770,15 @@ private fun PendingAccountsNotice(count: Int, moneyDue: Int, onOpen: () -> Unit,
                     if (count == 1) "1 tienda con pendientes" else "$count tiendas con pendientes",
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     if (moneyDue > 0) "Q$moneyDue por cobrar · toca para ver" else "Toca para ver",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             IconButton(onClick = onDismiss) {

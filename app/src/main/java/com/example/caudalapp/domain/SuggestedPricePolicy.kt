@@ -6,11 +6,11 @@ object SuggestedPricePolicy {
         return when (product.id) {
             ProductCatalog.BAGS.id -> when {
                 quantity == 8 -> 25
-                quantity % 18 == 0 -> quantity / 18 * 50
+                quantity % 18 == 0 -> quantity / 18 * (product.defaultSuggestedTotal ?: 50)
                 else -> null
             }
-            ProductCatalog.WATER_JUG.id -> quantity * 8
-            else -> product.defaultSuggestedTotal
+            // El precio guardado es por unidad (en bolsa, por fardo de 18).
+            else -> product.defaultSuggestedTotal?.let { it * quantity }
         }
     }
 }

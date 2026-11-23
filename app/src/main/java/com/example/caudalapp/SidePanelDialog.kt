@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,7 +25,7 @@ import androidx.compose.ui.window.DialogProperties
 
 /**
  * Como un AlertDialog, pero en tablet horizontal se abre como panel a la derecha (deja ver el mapa)
- * y en vertical como hoja alta desde abajo. Para formularios largos como las ventas.
+ * y en vertical como hoja desde abajo que deja ver el mapa arriba. Para formularios largos como las ventas.
  */
 @Composable
 fun SidePanelDialog(
@@ -47,7 +49,7 @@ fun SidePanelDialog(
                 modifier = if (landscape) {
                     Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(minOf(maxWidth * .48f, 620.dp))
                 } else {
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(.9f)
+                    Modifier.align(Alignment.BottomCenter).widthIn(max = 680.dp).fillMaxWidth().heightIn(max = maxHeight * .78f)
                 },
                 shape = if (landscape) RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp) else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -55,7 +57,7 @@ fun SidePanelDialog(
             ) {
                 Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     ProvideTextStyle(MaterialTheme.typography.headlineSmall) { title() }
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) { text() }
+                    Box(modifier = Modifier.weight(1f, fill = landscape).fillMaxWidth()) { text() }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),

@@ -1,6 +1,21 @@
 package com.example.caudalapp
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.FlowRow
@@ -66,7 +81,26 @@ fun StoreDetailsDialog(
     val unitsPending = account.pendingDeliveries.values.sum()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(store.name, fontWeight = FontWeight.Bold) },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(store.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                // Mover es raro y no debe competir con vender: queda en el menú de la tienda.
+                Box {
+                    var menuOpen by remember { mutableStateOf(false) }
+                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Más opciones") }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Mover ubicación") },
+                            leadingIcon = { Icon(Icons.Default.Place, contentDescription = null) },
+                            onClick = {
+                                menuOpen = false
+                                onMove()
+                            },
+                        )
+                    }
+                }
+            }
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 AccountRow("Debe dinero", "Q${account.totalOwed}", account.totalOwed > 0)
@@ -84,8 +118,7 @@ fun StoreDetailsDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onMove) { Text("Mover ubicación") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
     )
 }
 
@@ -122,6 +155,22 @@ fun StoreSaleDialog(
     var error by remember { mutableStateOf<String?>(null) }
     val cart = remember { mutableStateListOf<StoreSaleLineUi>() }
     var submitted by remember { mutableStateOf(false) }
+    var confirmCancel by remember { mutableStateOf(false) }
+    val requestCancel = { if (cart.isEmpty() && quantityText.isEmpty()) onDismiss() else confirmCancel = true }
+    if (confirmCancel) {
+        AlertDialog(
+            onDismissRequest = { confirmCancel = false },
+            title = { Text("¿Seguro que quieres cancelar?", fontWeight = FontWeight.Bold) },
+            text = { Text("Se pierden los productos agregados a esta venta. No se registra nada.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmCancel = false
+                    onDismiss()
+                }) { Text("Sí, cancelar venta", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { Button(onClick = { confirmCancel = false }, shape = RoundedCornerShape(10.dp)) { Text("Seguir con la venta") } },
+        )
+    }
     val invoiceTotal = cart.sumOf(StoreSaleLineUi::total)
     val hasPotentialPending = cart
         .groupBy { it.product.id }
@@ -130,9 +179,17 @@ fun StoreSaleDialog(
         }
 
     SidePanelDialog(
-        onDismissRequest = {},
-        title = { Text("Venta · ${store.name}", fontWeight = FontWeight.Bold) },
+        onDismissRequest = requestCancel,
+        title = {
+            Column {
+                Text("Nueva venta", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(store.name, fontWeight = FontWeight.Bold)
+            }
+        },
         text = {
+            // Deben leerse dentro del Dialog: afuera apuntan a la ventana de la actividad y el teclado no se cerraba.
+            val focusManager = LocalFocusManager.current
+            val keyboard = LocalSoftwareKeyboardController.current
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -231,23 +288,57 @@ fun StoreSaleDialog(
                                 soldContainersText = ""
                                 sellingContainers = false
                                 error = null
+                                focusManager.clearFocus()
+                                keyboard?.hide()
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Agregar producto") }
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(),
+                    ) { Text("+ Agregar a la factura", fontWeight = FontWeight.SemiBold) }
+                }
+                if (cart.isNotEmpty()) {
+                    item {
+                        Text(
+                            "FACTURA",
+                            modifier = Modifier.padding(top = 8.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(top = 4.dp), color = MaterialTheme.colorScheme.outline)
+                    }
                 }
                 itemsIndexed(cart) { index, line ->
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("${line.requested} × ${line.product.name}")
-                        Row {
-                            Text("Q${line.total}", fontWeight = FontWeight.Bold)
-                            TextButton(onClick = { cart.removeAt(index) }) { Text("Quitar") }
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(line.product.name, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "${line.requested} ${if (line.requested == 1) "unidad" else "unidades"}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Text("Q${line.total}", fontWeight = FontWeight.Bold)
+                        IconButton(onClick = { cart.removeAt(index) }) {
+                            Icon(Icons.Default.Close, contentDescription = "Quitar ${line.product.name}")
                         }
                     }
                 }
                 if (cart.isNotEmpty()) {
                     item {
-                        Text("Total: Q$invoiceTotal", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, end = 48.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text("Total", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                "Q$invoiceTotal",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         if (hasPotentialPending) {
                             Text(
                                 "Lo que no hay en el camión queda por entregar: el inventario se verá en negativo " +
@@ -328,9 +419,11 @@ fun StoreSaleDialog(
                         }
                     }
                 },
-            ) { Text("Registrar venta") }
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.height(52.dp),
+            ) { Text("Registrar venta", fontWeight = FontWeight.Bold) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClick = requestCancel) { Text("Cancelar") } },
     )
 }
 
