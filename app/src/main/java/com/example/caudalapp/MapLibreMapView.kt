@@ -95,6 +95,8 @@ class CaudalMapController {
     private var onCenterChanged: (GeoPoint) -> Unit = {}
     private var clickListener: MapLibreMap.OnMapClickListener? = null
     private var cameraIdleListener: MapLibreMap.OnCameraIdleListener? = null
+    private val baseMarkers = mutableMapOf<StoreMarkerState, Bitmap>()
+    private val storeImageIds = mutableSetOf<String>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val movementMonitor = object : Runnable {
         override fun run() {
@@ -160,6 +162,7 @@ class CaudalMapController {
 
     internal fun onStyleLoaded(style: Style) {
         this.style = style
+        storeImageIds.clear()
         renderStores()
         pendingFocus?.let(::focusOn)
     }
@@ -197,17 +200,23 @@ class CaudalMapController {
             }
             val imageId = storeCompositeImageId(store, badge)
             if (currentStyle.getImage(imageId) == null) {
-                currentStyle.addImage(imageId, createStoreCompositeBitmap(currentContext, store, badge))
+                val base = baseMarkers.getOrPut(store.state) { loadStoreMarkerBitmap(currentContext, store.state) }
+                currentStyle.addImage(imageId, createStoreCompositeBitmap(base, store, badge))
             }
             Feature.fromGeometry(Point.fromLngLat(store.location.longitude, store.location.latitude)).apply {
                 addStringProperty("storeId", store.id)
                 addStringProperty("iconId", imageId)
             }
         }
+        val usedIds = features.mapTo(mutableSetOf()) { it.getStringProperty("iconId") }
+        val unusedIds = storeImageIds - usedIds
+        storeImageIds.clear()
+        storeImageIds += usedIds
         val collection = FeatureCollection.fromFeatures(features)
         val existingSource = currentStyle.getSourceAs<GeoJsonSource>(STORE_SOURCE_ID)
         if (existingSource != null) {
             existingSource.setGeoJson(collection)
+            unusedIds.forEach(currentStyle::removeImage)
             return
         }
         currentStyle.addSource(
@@ -486,7 +495,7 @@ private fun storeCompositeImageId(store: MapStorePoint, badge: String?): String 
  * remote map glyphs. This also keeps custom marker assets working offline.
  */
 private fun createStoreCompositeBitmap(
-    context: android.content.Context,
+    marker: Bitmap,
     store: MapStorePoint,
     badge: String?,
 ): Bitmap {
@@ -508,7 +517,6 @@ private fun createStoreCompositeBitmap(
     canvas.drawRoundRect(8f, 5f, width - 8f, 48f, 18f, 18f, labelPaint)
     canvas.drawText(displayName, width / 2f, 35f, textPaint)
 
-    val marker = loadStoreMarkerBitmap(context, store.state)
     val markerTop = if (badge == null) 53 else 76
     val markerLeft = (width - 84) / 2
     canvas.drawBitmap(marker, null, android.graphics.Rect(markerLeft, markerTop, markerLeft + 84, markerTop + 96), null)

@@ -161,7 +161,8 @@ class CaudalOfflineMaps(context: Context) {
     }
 
     companion object {
-        private const val OFFLINE_STYLE = "https://tiles.openfreemap.org/styles/bright"
+        // Debe ser el mismo estilo que muestran los mapas, o sin señal quedan en blanco.
+        private val OFFLINE_STYLE = AppMapStyle.LIBERTY.styleUrl
         private const val MIN_OFFLINE_ZOOM = 9.0
         private const val MAX_OFFLINE_ZOOM = 17.0
     }

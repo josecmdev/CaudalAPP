@@ -104,9 +104,6 @@ fun ActiveRouteScreen(
     var auditOpen by remember { mutableStateOf(false) }
     var focusLocation by remember { mutableStateOf<GeoPoint?>(null) }
     var focusRequestId by remember { mutableIntStateOf(0) }
-    var elapsedMillis by remember(route.startedAtEpochMillis) {
-        mutableLongStateOf((System.currentTimeMillis() - route.startedAtEpochMillis).coerceAtLeast(0L))
-    }
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current.applicationContext
     val elapsedRouteId = remember(route.startedAtEpochMillis) {
@@ -115,14 +112,7 @@ fun ActiveRouteScreen(
     val historicalSales = remember(previousRoutes, ledgerRevision) {
         previousRoutes.flatMap(CompletedRouteRecord::sales) + route.ledger.sales
     }
-
-    LaunchedEffect(route.startedAtEpochMillis) {
-        RouteTrackingService.ensureElapsedClock(context, elapsedRouteId)
-        while (true) {
-            elapsedMillis = RouteTrackingService.elapsedMillis(context, elapsedRouteId)
-            delay(1_000L)
-        }
-    }
+    val daysSinceLastSaleByStore = remember(historicalSales) { StoreMarkerPolicy.daysSinceLastSaleByStore(historicalSales) }
 
     LaunchedEffect(closeRequested) {
         if (closeRequested) {
@@ -371,7 +361,7 @@ fun ActiveRouteScreen(
             markerState = { store ->
                 StoreMarkerPolicy.resolve(
                     route.ledger.storeAccount(store.id),
-                    daysSinceLastSale = StoreMarkerPolicy.daysSinceLastSale(store.id, historicalSales),
+                    daysSinceLastSale = daysSinceLastSaleByStore[store.id],
                 )
             },
             moneyDue = { store -> route.ledger.storeAccount(store.id).moneyDue },
@@ -394,15 +384,12 @@ fun ActiveRouteScreen(
         ) {
             Card(
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = .94f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
             ) {
                 Column(modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp)) {
                     Text(route.name, fontWeight = FontWeight.Bold)
-                    Text(
-                        formatRouteDuration(elapsedMillis),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    RouteClock(route.startedAtEpochMillis)
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -419,7 +406,6 @@ fun ActiveRouteScreen(
             key(ledgerRevision) {
                 RouteSummaryPanel(
                     route = route,
-                    elapsedMillis = elapsedMillis,
                     landscape = true,
                     expanded = panelExpanded,
                     onToggle = { panelExpanded = !panelExpanded },
@@ -436,7 +422,6 @@ fun ActiveRouteScreen(
             key(ledgerRevision) {
                 RouteSummaryPanel(
                     route = route,
-                    elapsedMillis = elapsedMillis,
                     landscape = false,
                     expanded = panelExpanded,
                     onToggle = { panelExpanded = !panelExpanded },
@@ -542,12 +527,30 @@ fun ActiveRouteScreen(
                 Text(
                     message,
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     fontWeight = FontWeight.Bold,
                 )
             }
         }
     }
+}
+
+@Composable
+private fun RouteClock(startedAtEpochMillis: Long) {
+    val context = LocalContext.current.applicationContext
+    val routeId = remember(startedAtEpochMillis) { RouteTrackingService.routeId(startedAtEpochMillis) }
+    var elapsedMillis by remember(startedAtEpochMillis) {
+        mutableLongStateOf((System.currentTimeMillis() - startedAtEpochMillis).coerceAtLeast(0L))
+    }
+    // Aislado para que el tic de cada segundo no recomponga el mapa ni los marcadores.
+    LaunchedEffect(startedAtEpochMillis) {
+        RouteTrackingService.ensureElapsedClock(context, routeId)
+        while (true) {
+            elapsedMillis = RouteTrackingService.elapsedMillis(context, routeId)
+            delay(1_000L)
+        }
+    }
+    Text(formatRouteDuration(elapsedMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 private fun formatRouteDuration(milliseconds: Long): String {
@@ -568,7 +571,6 @@ private fun RouteActionButton(label: String, onClick: () -> Unit) {
 @Composable
 private fun RouteSummaryPanel(
     route: ActiveRoute,
-    elapsedMillis: Long,
     landscape: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
@@ -595,7 +597,7 @@ private fun RouteSummaryPanel(
             )
         },
         shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = .94f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
@@ -618,7 +620,7 @@ private fun RouteSummaryPanel(
             AnimatedVisibility(visible = true) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(route.name, fontWeight = FontWeight.Bold)
-                    Text(formatRouteDuration(elapsedMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    RouteClock(route.startedAtEpochMillis)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Efectivo", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)

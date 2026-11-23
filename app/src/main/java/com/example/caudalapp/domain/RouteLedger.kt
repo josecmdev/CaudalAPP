@@ -787,4 +787,12 @@ object StoreMarkerPolicy {
             ?: return null
         return ((nowEpochMillis - latest).coerceAtLeast(0L) / 86_400_000L).toInt()
     }
+
+    fun daysSinceLastSaleByStore(
+        sales: List<SaleRecord>,
+        nowEpochMillis: Long = System.currentTimeMillis(),
+    ): Map<String, Int> = sales.asSequence()
+        .filter { it.storeId != null && !it.cancelled }
+        .groupBy({ it.storeId!! }, SaleRecord::recordedAtEpochMillis)
+        .mapValues { (_, times) -> ((nowEpochMillis - times.max()).coerceAtLeast(0L) / 86_400_000L).toInt() }
 }

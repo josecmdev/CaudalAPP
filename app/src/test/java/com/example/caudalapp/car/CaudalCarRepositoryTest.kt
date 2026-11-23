@@ -11,6 +11,7 @@ import com.example.caudalapp.domain.StoreChangeResult
 import com.example.caudalapp.domain.StoreDirectory
 import com.example.caudalapp.persistence.CaudalRestoredState
 import com.example.caudalapp.persistence.CaudalStateStore
+import com.example.caudalapp.persistence.CaudalStateWriter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -63,6 +64,29 @@ class CaudalCarRepositoryTest {
         assertTrue(restored.outstandingAccounts.isEmpty())
         assertEquals(1, restored.accountAdjustments.size)
         assertEquals(50, restored.accountAdjustments.single().amount)
+    }
+
+    @Test
+    fun `una venta del carro avisa a la tablet y la pantalla del carro se actualiza`() {
+        val file = temporaryFolder.newFile("state.json")
+        val stores = StoreDirectory()
+        val store = (stores.addStore("Lupita", GeoPoint(14.63, -90.50)) as StoreChangeResult.Success).store
+        CaudalStateStore(file).save(
+            CaudalRestoredState(ActiveRoute("Viernes", RouteLedger.start(0, mapOf(ProductCatalog.BAGS to 100))), stores, emptyList()),
+        )
+        val repository = CaudalCarRepository(file)
+        var notified = 0
+        val listener: () -> Unit = { notified++ }
+        CaudalStateWriter.addExternalChangeListener(listener)
+        try {
+            assertEquals(100, repository.snapshot().bagStock)
+            repository.sellBags(store.id, 8)
+
+            assertEquals(1, notified)
+            assertEquals(92, repository.snapshot().bagStock)
+        } finally {
+            CaudalStateWriter.removeExternalChangeListener(listener)
+        }
     }
 
     @Test

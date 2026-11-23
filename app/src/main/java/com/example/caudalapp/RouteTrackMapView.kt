@@ -33,7 +33,7 @@ import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import org.maplibre.geojson.FeatureCollection
 
-private const val HISTORY_MAP_STYLE = "https://tiles.openfreemap.org/styles/bright"
+private val HISTORY_MAP_STYLE = AppMapStyle.LIBERTY.styleUrl
 private const val TRACK_SOURCE_ID = "caudal-history-track-source"
 private const val TRACK_LAYER_ID = "caudal-history-track-layer"
 private const val SALES_SOURCE_ID = "caudal-history-sales-source"

@@ -5,6 +5,12 @@ object AdaptiveGpsPolicy {
     const val STATIONARY_INTERVAL_MILLIS = 10_000L
     const val MOVEMENT_GRACE_MILLIS = 15_000L
 
+    const val MAX_ACCURACY_METERS = 30f
+
+    /** Sin dato de precisión se acepta: algunos equipos no la reportan. */
+    fun isAccurateEnough(accuracyMeters: Float?): Boolean =
+        accuracyMeters == null || accuracyMeters <= MAX_ACCURACY_METERS
+
     fun isMoving(speedMetersPerSecond: Float?): Boolean =
         speedMetersPerSecond != null && speedMetersPerSecond >= MOVING_SPEED_METERS_PER_SECOND
 

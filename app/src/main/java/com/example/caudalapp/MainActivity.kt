@@ -2,7 +2,9 @@ package com.example.caudalapp
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.material3.AlertDialog
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
@@ -69,6 +71,8 @@ import com.example.caudalapp.domain.StoreAccountState
 import com.example.caudalapp.domain.StoreAccountAdjustment
 import com.example.caudalapp.persistence.CaudalRestoredState
 import com.example.caudalapp.persistence.CaudalStateStore
+import com.example.caudalapp.persistence.CaudalStateWriter
+import com.example.caudalapp.persistence.detachedCopy
 import androidx.lifecycle.ViewModel
 import java.io.File
 import kotlinx.coroutines.delay
@@ -87,7 +91,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        appState.persist()
+        appState.persistNow()
         super.onStop()
     }
 
@@ -126,14 +130,24 @@ class CaudalViewModel : ViewModel() {
         private set
     private var settingsStore: AppSettingsStore? = null
 
+    private val externalChangeListener: () -> Unit = {
+        android.os.Handler(android.os.Looper.getMainLooper()).post(::reloadPersistence)
+    }
+
     fun attachPersistence(file: File) {
         if (stateStore != null) return
         stateStore = CaudalStateStore(file)
+        CaudalStateWriter.addExternalChangeListener(externalChangeListener)
         reloadPersistence()
     }
 
     fun reloadPersistence() {
-        stateStore?.load()?.let(::applyRestoredState)
+        val store = stateStore ?: return
+        CaudalStateWriter.runBlocking { store.load() }?.let(::applyRestoredState)
+    }
+
+    override fun onCleared() {
+        CaudalStateWriter.removeExternalChangeListener(externalChangeListener)
     }
 
     private fun applyRestoredState(restored: CaudalRestoredState) {
@@ -147,18 +161,28 @@ class CaudalViewModel : ViewModel() {
         products = restored.products
     }
 
+    /** Guarda en segundo plano para no congelar la pantalla en cada venta. */
     fun persist() {
-        stateStore?.save(
-            CaudalRestoredState(
-                activeRoute = activeRoute,
-                stores = stores,
-                completedRoutes = completedRoutes.toList(),
-                outstandingAccounts = outstandingAccounts,
-                products = products,
-                accountAdjustments = accountAdjustments.toList(),
-            ),
-        )
+        val store = stateStore ?: return
+        val snapshot = currentState().detachedCopy()
+        CaudalStateWriter.enqueue { store.save(snapshot) }
     }
+
+    /** Guarda y espera; para cuando la app pasa a segundo plano y Android podría cerrarla. */
+    fun persistNow() {
+        val store = stateStore ?: return
+        val snapshot = currentState()
+        CaudalStateWriter.runBlocking { store.save(snapshot) }
+    }
+
+    private fun currentState() = CaudalRestoredState(
+        activeRoute = activeRoute,
+        stores = stores,
+        completedRoutes = completedRoutes.toList(),
+        outstandingAccounts = outstandingAccounts,
+        products = products,
+        accountAdjustments = accountAdjustments.toList(),
+    )
 
     private var accountsRevision by mutableIntStateOf(0)
 
@@ -206,8 +230,28 @@ private fun CaudalApp(appState: CaudalViewModel) {
         appState.destination = null
         appState.mapVisible = true
     }
+    var exitConfirmOpen by remember { mutableStateOf(false) }
     LaunchedEffect(appState) {
         appState.completionTransitionEvents().collect { completionTransitionId++ }
+    }
+    BackHandler {
+        if (appState.mapVisible) exitConfirmOpen = true else returnToMap()
+    }
+    if (exitConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { exitConfirmOpen = false },
+            title = { Text("¿Salir de Caudal App?") },
+            text = {
+                if (appState.activeRoute != null) Text("La ruta sigue activa y el GPS sigue registrando.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    exitConfirmOpen = false
+                    (activityContext as? android.app.Activity)?.finish()
+                }) { Text("Salir") }
+            },
+            dismissButton = { Button(onClick = { exitConfirmOpen = false }) { Text("Quedarme") } },
+        )
     }
     Box(modifier = Modifier.fillMaxSize()) {
       Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->

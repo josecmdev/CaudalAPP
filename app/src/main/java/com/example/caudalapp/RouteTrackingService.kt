@@ -51,7 +51,10 @@ class RouteTrackingService : Service(), LocationListener {
             return START_NOT_STICKY
         }
 
-        startForeground(NOTIFICATION_ID, trackingNotification())
+        if (!hasLocationPermission() || runCatching { startForeground(NOTIFICATION_ID, trackingNotification()) }.isFailure) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         activeRouteId = routeId
         configuredMovingIntervalSeconds = (intent?.getIntExtra(EXTRA_INTERVAL_SECONDS, -1)
             ?.takeIf { it > 0 }
@@ -84,7 +87,8 @@ class RouteTrackingService : Service(), LocationListener {
             if (fineGranted && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 add(LocationManager.GPS_PROVIDER)
             }
-            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+            // La red solo como respaldo: mezclarla con el GPS mete saltos de cientos de metros.
+            if (isEmpty() && locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 add(LocationManager.NETWORK_PROVIDER)
             }
         }
@@ -115,6 +119,7 @@ class RouteTrackingService : Service(), LocationListener {
             locationIntervalMillis = desiredInterval
             beginLocationUpdates()
         }
+        if (!AdaptiveGpsPolicy.isAccurateEnough(location.accuracy.takeIf { location.hasAccuracy() })) return
         if (lastSavedAtElapsedMillis != 0L &&
             nowElapsed - lastSavedAtElapsedMillis < (locationIntervalMillis * 9L / 10L)
         ) return
@@ -140,9 +145,14 @@ class RouteTrackingService : Service(), LocationListener {
         }
     }
 
-    override fun onProviderEnabled(provider: String) = Unit
+    // Cambiar de GPS a red (o al revés) cuando el usuario enciende o apaga el GPS.
+    override fun onProviderEnabled(provider: String) = beginLocationUpdates()
 
-    override fun onProviderDisabled(provider: String) = Unit
+    override fun onProviderDisabled(provider: String) = beginLocationUpdates()
+
+    private fun hasLocationPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     @Deprecated("Deprecated in Android")
     override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
@@ -246,11 +256,14 @@ class RouteTrackingService : Service(), LocationListener {
         fun elapsedMillis(context: Context, routeId: String): Long {
             ensureElapsedClock(context, routeId)
             val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-            return RouteElapsedPolicy.currentElapsedMillis(
-                preferences.getLong(CLOCK_ACCUMULATED, 0L),
-                preferences.getLong(CLOCK_STARTED, -1L),
-                SystemClock.elapsedRealtime(),
-            )
+            val now = SystemClock.elapsedRealtime()
+            val started = preferences.getLong(CLOCK_STARTED, -1L)
+            val elapsed = RouteElapsedPolicy.currentElapsedMillis(preferences.getLong(CLOCK_ACCUMULATED, 0L), started, now)
+            // Guarda lo acumulado cada minuto: si la tablet se reinicia, el reloj monótono vuelve a cero.
+            if (RouteElapsedPolicy.needsCheckpoint(started, now)) {
+                preferences.edit().putLong(CLOCK_ACCUMULATED, elapsed).putLong(CLOCK_STARTED, now).apply()
+            }
+            return elapsed
         }
 
         @Synchronized

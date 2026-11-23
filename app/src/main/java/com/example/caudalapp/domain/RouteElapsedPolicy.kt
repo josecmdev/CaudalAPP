@@ -1,6 +1,12 @@
 package com.example.caudalapp.domain
 
 object RouteElapsedPolicy {
+    const val CHECKPOINT_MILLIS = 60_000L
+
+    fun needsCheckpoint(sessionStartedAtElapsedRealtime: Long, nowElapsedRealtime: Long): Boolean =
+        sessionStartedAtElapsedRealtime >= 0L &&
+            nowElapsedRealtime - sessionStartedAtElapsedRealtime >= CHECKPOINT_MILLIS
+
     fun currentElapsedMillis(
         accumulatedMillis: Long,
         sessionStartedAtElapsedRealtime: Long,

@@ -9,6 +9,7 @@ import com.example.caudalapp.domain.StoreAccountState
 import com.example.caudalapp.domain.SuggestedPricePolicy
 import com.example.caudalapp.persistence.CaudalRestoredState
 import com.example.caudalapp.persistence.CaudalStateStore
+import com.example.caudalapp.persistence.CaudalStateWriter
 import java.io.File
 
 data class CarStoreSnapshot(
@@ -42,12 +43,26 @@ object CarBagPresetPolicy {
 class CaudalCarRepository(private val stateFile: File) {
     private val stateStore = CaudalStateStore(stateFile)
 
-    fun snapshot(): CaudalCarSnapshot = synchronized(FILE_ACCESS) {
+    private var cachedKey: Pair<Long, Long>? = null
+    private var cachedSnapshot: CaudalCarSnapshot? = null
+
+    // shortcut: detecta cambios por fecha y tamaño del archivo; dos guardados del mismo tamaño en el mismo
+    // segundo dejarían una pantalla atrasada hasta el siguiente cambio. Si pasa, guardar un contador de versión.
+    fun snapshot(): CaudalCarSnapshot = CaudalStateWriter.runBlocking {
+        val key = stateFile.lastModified() to stateFile.length()
+        cachedSnapshot?.takeIf { key == cachedKey }?.let { return@runBlocking it }
+        buildSnapshot().also {
+            cachedKey = key
+            cachedSnapshot = it
+        }
+    }
+
+    private fun buildSnapshot(): CaudalCarSnapshot {
         val state = stateStore.load()
-        if (state == null) return@synchronized CaudalCarSnapshot(null, null, 0, emptyList())
+        if (state == null) return CaudalCarSnapshot(null, null, 0, emptyList())
         val activeAccounts = state.activeRoute?.ledger?.outstandingAccountStates()?.associateBy(StoreAccountState::storeId)
         val savedAccounts = state.outstandingAccounts.associateBy(StoreAccountState::storeId)
-        CaudalCarSnapshot(
+        return CaudalCarSnapshot(
             routeName = state.activeRoute?.name,
             routeStartedAtEpochMillis = state.activeRoute?.startedAtEpochMillis,
             bagStock = state.activeRoute?.ledger?.availableStock(ProductCatalog.BAGS.id) ?: 0,
@@ -114,18 +129,18 @@ class CaudalCarRepository(private val stateFile: File) {
         CarOperationResult.Success("Cobro completo registrado: Q$due")
     }
 
-    private fun update(operation: (MutableCarState) -> CarOperationResult): CarOperationResult = synchronized(FILE_ACCESS) {
-        val restored = stateStore.load()
-            ?: return@synchronized CarOperationResult.Rejected("Abre Caudal App al menos una vez en este dispositivo")
-        val mutable = MutableCarState(restored)
-        val result = runCatching { operation(mutable) }
-            .getOrElse { CarOperationResult.Rejected(it.message ?: "No se pudo registrar la operación") }
-        if (result is CarOperationResult.Success) stateStore.save(mutable.toRestoredState())
-        result
-    }
-
-    private companion object {
-        val FILE_ACCESS = Any()
+    private fun update(operation: (MutableCarState) -> CarOperationResult): CarOperationResult {
+        val result = CaudalStateWriter.runBlocking {
+            val restored = stateStore.load()
+                ?: return@runBlocking CarOperationResult.Rejected("Abre Caudal App al menos una vez en este dispositivo")
+            val mutable = MutableCarState(restored)
+            val result = runCatching { operation(mutable) }
+                .getOrElse { CarOperationResult.Rejected(it.message ?: "No se pudo registrar la operación") }
+            if (result is CarOperationResult.Success) stateStore.save(mutable.toRestoredState())
+            result
+        }
+        if (result is CarOperationResult.Success) CaudalStateWriter.notifyExternalChange()
+        return result
     }
 }
 

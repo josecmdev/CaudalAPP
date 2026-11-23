@@ -297,6 +297,21 @@ class RouteLedgerTest {
         )
 
         assertEquals(2, days)
+        assertEquals(
+            mapOf("store-color" to 2),
+            StoreMarkerPolicy.daysSinceLastSaleByStore(listOf(recent, cancelled), nowEpochMillis = 10L * 86_400_000L),
+        )
+    }
+
+    @Test
+    fun `el cobro de deuda tambien salda lo pendiente de una entrega incompleta`() {
+        val ledger = RouteLedger.start(0, mapOf(bolsas to 1))
+        ledger.registerStoreSale("store-p", listOf(SaleLine(bolsas, requested = 2, delivered = 1, total = 40)), amountReceived = 0)
+
+        ledger.collectDebt("store-p", 40)
+
+        assertEquals(40, ledger.cashOnHand)
+        assertEquals(0, ledger.storeAccount("store-p").paymentPending(bolsas.id))
     }
 
     @Test

@@ -108,7 +108,7 @@ fun StoreMapLayer(
             Text(
                 "Mueve el mapa debajo de la mira\n${"%.5f".format(center.latitude)}, ${"%.5f".format(center.longitude)}",
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 92.dp)
-                    .background(Color.White.copy(alpha = .94f), RoundedCornerShape(16.dp)).padding(12.dp),
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = .94f), RoundedCornerShape(16.dp)).padding(12.dp),
                 textAlign = TextAlign.Center,
                 fontWeight = FontWeight.SemiBold,
             )
