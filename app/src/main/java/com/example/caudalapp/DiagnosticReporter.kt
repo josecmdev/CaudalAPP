@@ -47,7 +47,9 @@ object DiagnosticReporter {
         return buildString {
             appendLine("CAUDAL APP · REPORTE DE DIAGNÓSTICO")
             appendLine("Generado: ${Date()}")
-            appendLine("Versión: ${packageInfo.versionName} (${packageInfo.longVersionCode})")
+            @Suppress("DEPRECATION")
+            val versionCode = if (Build.VERSION.SDK_INT >= 28) packageInfo.longVersionCode else packageInfo.versionCode.toLong()
+            appendLine("Versión: ${packageInfo.versionName} ($versionCode)")
             appendLine("Dispositivo: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("Android: ${Build.VERSION.RELEASE} · API ${Build.VERSION.SDK_INT}")
             appendLine("Estado local: ${if (state.exists()) "${state.length()} bytes" else "no encontrado"}")

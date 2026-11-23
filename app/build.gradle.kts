@@ -24,6 +24,8 @@ android {
 
     buildTypes {
         release {
+            // shortcut: private tablet app signed with the debug key so Android Studio can install release; use a real keystore before any store upload.
+            signingConfig = signingConfigs.getByName("debug")
             optimization {
                 enable = false
             }

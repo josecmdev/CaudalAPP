@@ -139,7 +139,7 @@ private fun ProductCard(product: Product, onEdit: () -> Unit, onArchiveToggle: (
 }
 
 @Composable
-private fun ProductImage(product: Product, modifier: Modifier = Modifier) {
+internal fun ProductImage(product: Product, modifier: Modifier = Modifier) {
     val uri = product.imageUri
     if (uri == null) {
         Box(
