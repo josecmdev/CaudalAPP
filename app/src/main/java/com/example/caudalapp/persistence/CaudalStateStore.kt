@@ -25,6 +25,8 @@ import com.example.caudalapp.domain.TransferLine
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 
 data class CaudalRestoredState(
     val activeRoute: ActiveRoute?,
@@ -220,18 +222,85 @@ object CaudalStateCodec {
     fun decode(value: String): CaudalRestoredState = json.decodeFromString<PersistedStateDto>(value).toDomain()
 }
 
-class CaudalStateStore(private val stateFile: File) {
-    fun load(): CaudalRestoredState? = runCatching {
+/**
+ * Guarda todo el estado en un único archivo JSON.
+ *
+ * Reglas de seguridad:
+ * - Si el archivo existe pero no se puede leer o decodificar, se aparta con el sufijo
+ *   `.unreadable-<epochMillis>` en lugar de ignorarse, para que el siguiente guardado no
+ *   sobrescriba los datos originales. [lastSetAsideFile] indica dónde quedó.
+ * - El guardado escribe primero un archivo temporal sincronizado con el disco y luego lo
+ *   reemplaza con un rename atómico, así el archivo principal nunca queda a medio escribir
+ *   ni desaparece.
+ */
+class CaudalStateStore(
+    private val stateFile: File,
+    private val clock: () -> Long = System::currentTimeMillis,
+) {
+    private val directory: File get() = stateFile.absoluteFile.parentFile
+    private val temporaryFile: File get() = File(directory, "${stateFile.name}.tmp")
+
+    /** Archivo ilegible que la última llamada a [load] apartó, o null si no apartó ninguno. */
+    var lastSetAsideFile: File? = null
+        private set
+
+    fun load(): CaudalRestoredState? {
+        lastSetAsideFile = null
+        recoverInterruptedFallbackSave()
         if (!stateFile.exists()) return null
-        CaudalStateCodec.decode(stateFile.readText(Charsets.UTF_8))
-    }.getOrNull()
+        return runCatching { CaudalStateCodec.decode(stateFile.readText(Charsets.UTF_8)) }
+            .getOrElse {
+                lastSetAsideFile = setAsideUnreadableFile()
+                null
+            }
+    }
 
     fun save(state: CaudalRestoredState) {
-        stateFile.parentFile?.mkdirs()
-        val temporary = File(stateFile.parentFile, "${stateFile.name}.tmp")
-        temporary.writeText(CaudalStateCodec.encode(state), Charsets.UTF_8)
-        if (stateFile.exists() && !stateFile.delete()) return
-        temporary.renameTo(stateFile)
+        directory.mkdirs()
+        val temporary = temporaryFile
+        FileOutputStream(temporary).use { output ->
+            output.write(CaudalStateCodec.encode(state).toByteArray(Charsets.UTF_8))
+            output.flush()
+            output.fd.sync()
+        }
+        // En Android y en la JVM sobre Linux, renameTo es rename(2): atómico y reemplaza el destino.
+        if (temporary.renameTo(stateFile)) return
+        replaceWithoutAtomicRename(temporary)
+    }
+
+    /**
+     * Respaldo para sistemas donde rename no reemplaza un archivo existente (por ejemplo Windows
+     * al correr pruebas). Mueve el archivo anterior a `.previous` antes de colocar el nuevo, de
+     * modo que en ningún momento se pierden ambos.
+     */
+    private fun replaceWithoutAtomicRename(temporary: File) {
+        val previous = File(directory, "${stateFile.name}.previous")
+        previous.delete()
+        if (stateFile.exists() && !stateFile.renameTo(previous)) {
+            throw IOException("No se pudo reemplazar ${stateFile.name}")
+        }
+        if (!temporary.renameTo(stateFile)) {
+            previous.renameTo(stateFile)
+            throw IOException("No se pudo guardar ${stateFile.name}")
+        }
+        previous.delete()
+    }
+
+    /** Si un guardado de respaldo se interrumpió entre sus dos renames, restaura el archivo anterior. */
+    private fun recoverInterruptedFallbackSave() {
+        val previous = File(directory, "${stateFile.name}.previous")
+        if (!stateFile.exists() && previous.exists()) previous.renameTo(stateFile)
+    }
+
+    private fun setAsideUnreadableFile(): File? {
+        val target = File(directory, "${stateFile.name}.unreadable-${clock()}")
+        if (stateFile.renameTo(target)) return target
+        // Si no se puede mover, se copia; si tampoco, se deja el original intacto y se avisa.
+        return runCatching {
+            stateFile.copyTo(target, overwrite = false)
+            stateFile.delete()
+            target
+        }.getOrNull()
     }
 }
 

@@ -15,11 +15,14 @@ import com.example.caudalapp.domain.ExpenseCategory
 import com.example.caudalapp.domain.StoreAccountAdjustment
 import com.example.caudalapp.domain.StoreAccountAdjustmentType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 class CaudalStateStoreTest {
     @get:Rule
@@ -114,5 +117,108 @@ class CaudalStateStoreTest {
 
         file.writeText("no-es-json")
         assertNull(store.load())
+    }
+
+    @Test
+    fun `un archivo ilegible se aparta con su contenido y el siguiente guardado no lo sobrescribe`() {
+        val folder = temporaryFolder.newFolder("data")
+        val file = File(folder, "caudal-state-v1.json")
+        file.writeText("{\"schemaVersion\":1,\"stores\":[{\"id\":")
+        val store = CaudalStateStore(file, clock = { 42L })
+
+        assertNull(store.load())
+
+        val setAside = File(folder, "caudal-state-v1.json.unreadable-42")
+        assertEquals(setAside, store.lastSetAsideFile)
+        assertEquals("{\"schemaVersion\":1,\"stores\":[{\"id\":", setAside.readText())
+        assertFalse(file.exists())
+
+        store.save(namedState("Tienda Nueva"))
+
+        assertEquals("{\"schemaVersion\":1,\"stores\":[{\"id\":", setAside.readText())
+        assertEquals("Tienda Nueva", store.load()?.stores?.allStores()?.single()?.name)
+        assertNull(store.lastSetAsideFile)
+    }
+
+    @Test
+    fun `una version de datos desconocida tambien se aparta en lugar de perderse`() {
+        val folder = temporaryFolder.newFolder("data")
+        val file = File(folder, "caudal-state-v1.json")
+        file.writeText("{\"schemaVersion\":2}")
+        val store = CaudalStateStore(file, clock = { 7L })
+
+        assertNull(store.load())
+
+        assertEquals("{\"schemaVersion\":2}", File(folder, "caudal-state-v1.json.unreadable-7").readText())
+    }
+
+    @Test
+    fun `sin archivo no se aparta nada`() {
+        val store = CaudalStateStore(File(temporaryFolder.newFolder("data"), "caudal-state-v1.json"))
+
+        assertNull(store.load())
+        assertNull(store.lastSetAsideFile)
+    }
+
+    @Test
+    fun `guardar reemplaza el archivo anterior y no deja temporales`() {
+        val folder = temporaryFolder.newFolder("data")
+        val file = File(folder, "caudal-state-v1.json")
+        val store = CaudalStateStore(file)
+
+        store.save(namedState("Primera"))
+        store.save(namedState("Segunda"))
+
+        assertEquals("Segunda", store.load()?.stores?.allStores()?.single()?.name)
+        assertEquals(listOf("caudal-state-v1.json"), folder.list()?.toList())
+    }
+
+    @Test
+    fun `un temporal viejo de un guardado interrumpido no afecta la carga`() {
+        val folder = temporaryFolder.newFolder("data")
+        val file = File(folder, "caudal-state-v1.json")
+        val store = CaudalStateStore(file)
+        store.save(namedState("Guardada"))
+        File(folder, "caudal-state-v1.json.tmp").writeText("{\"schemaVersion\":1,\"sto")
+
+        assertEquals("Guardada", store.load()?.stores?.allStores()?.single()?.name)
+
+        store.save(namedState("Siguiente"))
+        assertEquals("Siguiente", store.load()?.stores?.allStores()?.single()?.name)
+    }
+
+    @Test
+    fun `si escribir el temporal falla el archivo guardado queda intacto`() {
+        val folder = temporaryFolder.newFolder("data")
+        val file = File(folder, "caudal-state-v1.json")
+        val store = CaudalStateStore(file)
+        store.save(namedState("Intacta"))
+        val before = file.readText()
+        // Un directorio en la ruta del temporal hace que la escritura falle.
+        File(folder, "caudal-state-v1.json.tmp").mkdir()
+
+        val failure = runCatching { store.save(namedState("Nunca")) }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertEquals(before, file.readText())
+        assertEquals("Intacta", store.load()?.stores?.allStores()?.single()?.name)
+    }
+
+    @Test
+    fun `se recupera el archivo anterior si un guardado de respaldo se interrumpio`() {
+        val folder = temporaryFolder.newFolder("data")
+        val file = File(folder, "caudal-state-v1.json")
+        val store = CaudalStateStore(file)
+        store.save(namedState("Anterior"))
+        assertTrue(file.renameTo(File(folder, "caudal-state-v1.json.previous")))
+
+        assertEquals("Anterior", store.load()?.stores?.allStores()?.single()?.name)
+        assertTrue(file.exists())
+    }
+
+    private fun namedState(storeName: String): CaudalRestoredState {
+        val stores = StoreDirectory { "store-1" }
+        stores.addStore(storeName, GeoPoint(14.6, -90.5))
+        return CaudalRestoredState(activeRoute = null, stores = stores, completedRoutes = emptyList())
     }
 }
