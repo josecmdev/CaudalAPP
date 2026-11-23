@@ -41,7 +41,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -50,13 +49,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,30 +63,19 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.caudalapp.ui.theme.CaudalAPPTheme
 import com.example.caudalapp.domain.ActiveRoute
-import com.example.caudalapp.domain.StoreDirectory
 import com.example.caudalapp.domain.StoreMarkerPolicy
 import com.example.caudalapp.domain.CompletedRouteRecord
-import com.example.caudalapp.domain.ProductDirectory
-import com.example.caudalapp.domain.StoreAccountState
-import com.example.caudalapp.domain.StoreAccountAdjustment
-import com.example.caudalapp.persistence.CaudalRestoredState
-import com.example.caudalapp.persistence.CaudalStateStore
 import com.example.caudalapp.persistence.CaudalStateWriter
-import com.example.caudalapp.persistence.detachedCopy
-import androidx.lifecycle.ViewModel
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.receiveAsFlow
 
 class MainActivity : ComponentActivity() {
     private val appState by viewModels<CaudalViewModel>()
@@ -120,119 +107,6 @@ enum class HomeDestination(val title: String, val description: String, val icon:
     PRODUCTS("Productos", "Edita productos e imágenes", Icons.Default.Edit),
     OFFLINE_MAP("Mapa sin internet", "Descarga tu zona de trabajo", Icons.Default.Place),
     SETTINGS("Ajustes", "Personaliza y prepara la aplicación", Icons.Default.Settings),
-}
-
-class CaudalViewModel : ViewModel() {
-    var destination by mutableStateOf<HomeDestination?>(null)
-    var mapVisible by mutableStateOf(true)
-    var routeCloseRequested by mutableStateOf(false)
-    private val completionTransitions = Channel<Unit>(capacity = Channel.BUFFERED)
-    var activeRoute by mutableStateOf<ActiveRoute?>(null)
-    var stores by mutableStateOf(StoreDirectory())
-        private set
-    val completedRoutes = mutableStateListOf<CompletedRouteRecord>()
-    var outstandingAccounts by mutableStateOf<List<StoreAccountState>>(emptyList())
-    val accountAdjustments = mutableStateListOf<StoreAccountAdjustment>()
-    var products by mutableStateOf(ProductDirectory())
-        private set
-    var storeFocusId by mutableStateOf<String?>(null)
-    private var stateStore: CaudalStateStore? = null
-    var settings by mutableStateOf(AppSettings())
-        private set
-    private var settingsStore: AppSettingsStore? = null
-
-    private val externalChangeListener: () -> Unit = {
-        android.os.Handler(android.os.Looper.getMainLooper()).post(::reloadPersistence)
-    }
-
-    fun attachPersistence(file: File) {
-        if (stateStore != null) return
-        stateStore = CaudalStateStore(file)
-        CaudalStateWriter.addExternalChangeListener(externalChangeListener)
-        reloadPersistence()
-    }
-
-    fun reloadPersistence() {
-        val store = stateStore ?: return
-        CaudalStateWriter.runBlocking { store.load() }?.let(::applyRestoredState)
-    }
-
-    override fun onCleared() {
-        CaudalStateWriter.removeExternalChangeListener(externalChangeListener)
-    }
-
-    private fun applyRestoredState(restored: CaudalRestoredState) {
-        activeRoute = restored.activeRoute
-        stores = restored.stores
-        completedRoutes.clear()
-        completedRoutes.addAll(restored.completedRoutes)
-        outstandingAccounts = restored.outstandingAccounts
-        accountAdjustments.clear()
-        accountAdjustments.addAll(restored.accountAdjustments)
-        products = restored.products
-    }
-
-    fun applyBackup(restored: CaudalRestoredState) {
-        applyRestoredState(restored)
-        storeFocusId = null
-    }
-
-    /** Guarda en segundo plano para no congelar la pantalla en cada venta. */
-    fun persist() {
-        val store = stateStore ?: return
-        val snapshot = currentState().detachedCopy()
-        CaudalStateWriter.enqueue { store.save(snapshot) }
-    }
-
-    /** Guarda y espera; para cuando la app pasa a segundo plano y Android podría cerrarla. */
-    fun persistNow() {
-        val store = stateStore ?: return
-        val snapshot = currentState()
-        CaudalStateWriter.runBlocking { store.save(snapshot) }
-    }
-
-    private fun currentState() = CaudalRestoredState(
-        activeRoute = activeRoute,
-        stores = stores,
-        completedRoutes = completedRoutes.toList(),
-        outstandingAccounts = outstandingAccounts,
-        products = products,
-        accountAdjustments = accountAdjustments.toList(),
-    )
-
-    private var accountsRevision by mutableIntStateOf(0)
-
-    /** Con ruta activa, las cuentas vivas son las de la ruta; las guardadas se reemplazan al cerrarla. */
-    val currentAccounts: List<StoreAccountState>
-        get() {
-            accountsRevision
-            return activeRoute?.ledger?.outstandingAccountStates() ?: outstandingAccounts
-        }
-
-    fun applyAccountChange(updated: List<StoreAccountState>, adjustment: StoreAccountAdjustment) {
-        val route = activeRoute
-        if (route == null) outstandingAccounts = updated else route.ledger.applyAccountAdjustment(adjustment)
-        accountAdjustments += adjustment
-        accountsRevision++
-        persist()
-    }
-
-    fun attachSettings(context: android.content.Context) {
-        if (settingsStore != null) return
-        settingsStore = AppSettingsStore(context)
-        settings = settingsStore!!.load()
-    }
-
-    fun updateSettings(updated: AppSettings) {
-        settings = updated
-        settingsStore?.save(updated)
-    }
-
-    fun showCompletionTransition() {
-        completionTransitions.trySend(Unit)
-    }
-
-    fun completionTransitionEvents() = completionTransitions.receiveAsFlow()
 }
 
 @Composable
@@ -288,38 +162,13 @@ private fun CaudalApp(appState: CaudalViewModel) {
                     val activeDurationMillis = RouteTrackingService.elapsedMillis(context, trackId)
                     RouteTrackingService.stop(context)
                     val trackPointCount = RouteTrackingService.trackStore(context).count(trackId)
-                    appState.completedRoutes += CompletedRouteRecord(
-                        routeName = currentRoute.name,
-                        startedAtEpochMillis = currentRoute.startedAtEpochMillis,
-                        finishedAtEpochMillis = System.currentTimeMillis(),
-                        summary = closeResult.summary,
-                        trackId = trackId,
-                        trackPointCount = trackPointCount,
-                        sales = currentRoute.ledger.sales,
-                        auditEntries = currentRoute.ledger.auditEntries,
-                        activeDurationMillis = activeDurationMillis,
-                        countedCash = closeResult.countedCash,
-                        countedStock = closeResult.countedStock,
-                        expectedStock = currentRoute.ledger.products().associate { product ->
-                            product.id to currentRoute.ledger.availableStock(product.id)
-                        },
-                    )
-                    appState.outstandingAccounts = currentRoute.ledger.outstandingAccountStates()
-                    appState.activeRoute = null
-                    appState.destination = null
-                    appState.mapVisible = true
-                    appState.showCompletionTransition()
-                    appState.persist()
+                    appState.finishRoute(closeResult, trackId, activeDurationMillis, trackPointCount)
                 },
                 onRouteDiscarded = {
                     val trackId = RouteTrackingService.routeId(currentRoute.startedAtEpochMillis)
                     RouteTrackingService.stop(context)
                     RouteTrackingService.trackStore(context).delete(trackId)
-                    appState.activeRoute = null
-                    appState.destination = null
-                    appState.mapVisible = true
-                    appState.showCompletionTransition()
-                    appState.persist()
+                    appState.discardRoute()
                 },
                 onStateChanged = appState::persist,
                 onLocationPermissionGranted = {
@@ -357,14 +206,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
                     appState.destination = null
                     appState.mapVisible = true
                 },
-                onRouteStarted = { route ->
-                    route.ledger.registerProducts(appState.products.allProducts())
-                    route.ledger.importAccounts(appState.outstandingAccounts)
-                    appState.activeRoute = route
-                    appState.destination = null
-                    appState.mapVisible = true
-                    appState.persist()
-                },
+                onRouteStarted = appState::startRoute,
                 modifier = Modifier.padding(padding),
             )
         } else if (appState.destination == HomeDestination.HISTORY) {
@@ -372,13 +214,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 routes = appState.completedRoutes,
                 stores = appState.stores,
                 productName = { id -> appState.products.get(id)?.name ?: id },
-                onArchiveChanged = { record, archived ->
-                    val index = appState.completedRoutes.indexOf(record)
-                    if (index >= 0) {
-                        appState.completedRoutes[index] = record.copy(archived = archived)
-                        appState.persist()
-                    }
-                },
+                onArchiveChanged = appState::setRouteArchived,
                 onBack = returnToMap,
                 modifier = Modifier.padding(padding),
             )
