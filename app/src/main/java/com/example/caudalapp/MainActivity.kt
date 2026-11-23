@@ -71,7 +71,9 @@ import com.example.caudalapp.persistence.CaudalRestoredState
 import com.example.caudalapp.persistence.CaudalStateStore
 import androidx.lifecycle.ViewModel
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 
@@ -145,6 +147,11 @@ class CaudalViewModel : ViewModel() {
         accountAdjustments.clear()
         accountAdjustments.addAll(restored.accountAdjustments)
         products = restored.products
+    }
+
+    fun applyBackup(restored: CaudalRestoredState) {
+        applyRestoredState(restored)
+        storeFocusId = null
     }
 
     fun persist() {
@@ -368,6 +375,17 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 settings = appState.settings,
                 onSettingsChanged = appState::updateSettings,
                 onExportDiagnostics = { DiagnosticReporter.share(activityContext) },
+                routeActive = appState.activeRoute != null,
+                onExportData = {
+                    appState.persist()
+                    val uri = withContext(Dispatchers.IO) { DataBackup.prepare(context) }
+                    DataBackup.share(activityContext, uri)
+                },
+                onRestoreData = { uri ->
+                    check(appState.activeRoute == null) { "Cierra la ruta activa para poder restaurar un respaldo." }
+                    val restored = withContext(Dispatchers.IO) { DataBackup.restore(context, uri) }
+                    appState.applyBackup(restored)
+                },
                 onBack = returnToMap,
                 modifier = Modifier.padding(padding),
             )
