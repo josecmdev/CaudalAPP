@@ -6,6 +6,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
@@ -341,9 +343,8 @@ private fun MapOptionsDialog(
     ) {
         Card(
             modifier = Modifier.fillMaxWidth(.9f).fillMaxHeight(.88f).widthIn(max = 920.dp),
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         ) {
             Column(modifier = Modifier.fillMaxSize().padding(22.dp)) {
@@ -488,16 +489,17 @@ private fun DestinationCard(
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().height(86.dp),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                modifier = Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                modifier = Modifier.size(44.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
             ) {
                 // Cuentas usa la Q de quetzal: no hay ícono de moneda local.
@@ -516,29 +518,32 @@ private fun DestinationCard(
 private fun ActiveRouteActions(onFinishRoute: () -> Unit, onDiscardRoute: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Ruta activa", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text("Ruta activa", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
             Text(
                 "Finalizar guarda el cierre en el historial. Eliminar borra la ruta como si no se hubiera hecho.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
                 fontSize = 13.sp,
             )
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Button(onClick = onFinishRoute, modifier = Modifier.weight(1f)) {
-                    Text("Finalizar y guardar", fontWeight = FontWeight.Bold)
+                Button(onClick = onFinishRoute, modifier = Modifier.weight(1f).height(52.dp)) {
+                    Icon(Icons.Default.Check, contentDescription = null)
+                    Text("Finalizar y guardar", modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.Bold)
                 }
                 androidx.compose.material3.OutlinedButton(
                     onClick = onDiscardRoute,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).height(52.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surface),
                 ) {
-                    Text("Eliminar ruta", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    Text("Eliminar ruta", modifier = Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                 }
             }
         }
