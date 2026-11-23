@@ -5,6 +5,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
@@ -57,7 +66,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -65,6 +73,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.caudalapp.ui.theme.CaudalAPPTheme
 import com.example.caudalapp.domain.ActiveRoute
 import com.example.caudalapp.domain.StoreDirectory
+import com.example.caudalapp.domain.StoreMarkerPolicy
 import com.example.caudalapp.domain.CompletedRouteRecord
 import com.example.caudalapp.domain.ProductDirectory
 import com.example.caudalapp.domain.StoreAccountState
@@ -101,14 +110,14 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-enum class HomeDestination(val title: String, val description: String, val symbol: String) {
-    NEW_ROUTE("Nueva ruta", "Prepara sencillo e inventario", "→"),
-    HISTORY("Historial", "Consulta rutas y cierres anteriores", "↺"),
-    ACCOUNTS("Cuentas pendientes", "Deudas, envases y entregas", "Q"),
-    STORES("Tiendas", "Administra los puntos del mapa", "⌂"),
-    PRODUCTS("Productos", "Edita productos e imágenes", "+"),
-    OFFLINE_MAP("Mapa sin internet", "Descarga tu zona de trabajo", "↓"),
-    SETTINGS("Ajustes", "Personaliza y prepara la aplicación", "⚙"),
+enum class HomeDestination(val title: String, val description: String, val icon: ImageVector?) {
+    NEW_ROUTE("Nueva ruta", "Prepara sencillo e inventario", Icons.AutoMirrored.Filled.ArrowForward),
+    HISTORY("Historial", "Consulta rutas y cierres anteriores", Icons.Default.DateRange),
+    ACCOUNTS("Cuentas pendientes", "Deudas, envases y entregas", null),
+    STORES("Tiendas", "Administra los puntos del mapa", Icons.Default.Home),
+    PRODUCTS("Productos", "Edita productos e imágenes", Icons.Default.Edit),
+    OFFLINE_MAP("Mapa sin internet", "Descarga tu zona de trabajo", Icons.Default.Place),
+    SETTINGS("Ajustes", "Personaliza y prepara la aplicación", Icons.Default.Settings),
 }
 
 class CaudalViewModel : ViewModel() {
@@ -255,7 +264,8 @@ private fun CaudalApp(appState: CaudalViewModel) {
     }
     Box(modifier = Modifier.fillMaxSize()) {
       Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
-        if (appState.mapVisible && appState.activeRoute != null) {
+        val showMap = appState.mapVisible || appState.destination == null
+        if (showMap && appState.activeRoute != null) {
             val currentRoute = appState.activeRoute!!
             ActiveRouteScreen(
                 route = currentRoute,
@@ -314,7 +324,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 settings = appState.settings,
                 modifier = Modifier.padding(padding),
             )
-        } else if (appState.mapVisible) {
+        } else if (showMap) {
             HomeMapScreen(
                 stores = appState.stores,
                 accounts = appState.currentAccounts,
@@ -330,24 +340,6 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 onAccountsChanged = appState::applyAccountChange,
                 productName = { id -> appState.products.get(id)?.name ?: id },
                 settings = appState.settings,
-                modifier = Modifier.padding(padding),
-            )
-        } else if (appState.destination == null) {
-            HomeScreen(
-                routeActive = appState.activeRoute != null,
-                onOpenMap = {
-                    appState.destination = null
-                    appState.mapVisible = true
-                },
-                onFinishRoute = {
-                    appState.routeCloseRequested = true
-                    appState.destination = null
-                    appState.mapVisible = true
-                },
-                onDestinationSelected = {
-                    appState.storeFocusId = null
-                    appState.destination = it
-                },
                 modifier = Modifier.padding(padding),
             )
         } else if (appState.destination == HomeDestination.NEW_ROUTE) {
@@ -373,10 +365,12 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 routes = appState.completedRoutes,
                 stores = appState.stores,
                 productName = { id -> appState.products.get(id)?.name ?: id },
-                onDeleteRoute = { record ->
-                    record.trackId?.let { RouteTrackingService.trackStore(context).delete(it) }
-                    appState.completedRoutes.remove(record)
-                    appState.persist()
+                onArchiveChanged = { record, archived ->
+                    val index = appState.completedRoutes.indexOf(record)
+                    if (index >= 0) {
+                        appState.completedRoutes[index] = record.copy(archived = archived)
+                        appState.persist()
+                    }
                 },
                 onBack = returnToMap,
                 modifier = Modifier.padding(padding),
@@ -402,6 +396,9 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 onStateChanged = appState::persist,
                 onAccountsChanged = appState::applyAccountChange,
                 productName = { id -> appState.products.get(id)?.name ?: id },
+                daysSinceLastSaleByStore = remember(appState.completedRoutes.toList()) {
+                    StoreMarkerPolicy.daysSinceLastSaleByStore(appState.completedRoutes.flatMap(CompletedRouteRecord::sales))
+                },
                 modifier = Modifier.padding(padding),
             )
         } else if (appState.destination == HomeDestination.PRODUCTS) {
@@ -416,17 +413,11 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 onBack = returnToMap,
                 modifier = Modifier.padding(padding),
             )
-        } else if (appState.destination == HomeDestination.SETTINGS) {
+        } else {
             SettingsScreen(
                 settings = appState.settings,
                 onSettingsChanged = appState::updateSettings,
                 onExportDiagnostics = { DiagnosticReporter.share(activityContext) },
-                onBack = returnToMap,
-                modifier = Modifier.padding(padding),
-            )
-        } else {
-            FirstIterationPlaceholder(
-                destination = appState.destination!!,
                 onBack = returnToMap,
                 modifier = Modifier.padding(padding),
             )
@@ -436,6 +427,10 @@ private fun CaudalApp(appState: CaudalViewModel) {
           MapOptionsDialog(
               routeActive = appState.activeRoute != null,
               onDismiss = { mapMenuOpen = false },
+              onFinishRoute = {
+                  mapMenuOpen = false
+                  appState.routeCloseRequested = true
+              },
               onDestinationSelected = { destination ->
                   mapMenuOpen = false
                   appState.storeFocusId = null
@@ -452,6 +447,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
 private fun MapOptionsDialog(
     routeActive: Boolean,
     onDismiss: () -> Unit,
+    onFinishRoute: () -> Unit,
     onDestinationSelected: (HomeDestination) -> Unit,
 ) {
     val destinations = HomeDestination.entries.filter { it != HomeDestination.NEW_ROUTE }
@@ -479,7 +475,15 @@ private fun MapOptionsDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    TextButton(onClick = onDismiss) { Text("Volver al mapa") }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Finalizar vive aquí, lejos del mapa, para que no se toque por accidente a media ruta.
+                        if (routeActive) {
+                            TextButton(onClick = onFinishRoute) {
+                                Text("Finalizar ruta", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Button(onClick = onDismiss) { Text("Volver al mapa") }
+                    }
                 }
                 Spacer(Modifier.height(18.dp))
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
@@ -594,113 +598,6 @@ private fun waterDropPath(center: Offset, radius: Float): Path = Path().apply {
 }
 
 @Composable
-private fun HomeScreen(
-    routeActive: Boolean,
-    onOpenMap: () -> Unit,
-    onFinishRoute: () -> Unit,
-    onDestinationSelected: (HomeDestination) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val landscape = maxWidth > maxHeight
-        val destinations = HomeDestination.entries.filterNot { it == HomeDestination.NEW_ROUTE }
-        Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(horizontal = if (landscape) 34.dp else 20.dp, vertical = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Card(
-                modifier = Modifier.fillMaxWidth().widthIn(max = 980.dp),
-                shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(22.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
-                        modifier = Modifier.size(58.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("C", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Black)
-                    }
-                    Column(modifier = Modifier.padding(start = 16.dp).weight(1f)) {
-                        Text("Caudal App", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                        Text("Ventas y rutas en un solo lugar", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (routeActive) Color(0xFFDDF7E7) else MaterialTheme.colorScheme.surface,
-                    ) {
-                        Text(
-                            if (routeActive) "● Ruta activa" else "Listo para salir",
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                            color = if (routeActive) Color(0xFF177A45) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(18.dp))
-            Column(
-                modifier = Modifier.fillMaxWidth().widthIn(max = 980.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                PrimaryRouteButton(
-                    routeActive = routeActive,
-                    onClick = if (routeActive) onOpenMap else {
-                        { onDestinationSelected(HomeDestination.NEW_ROUTE) }
-                    },
-                )
-                if (routeActive) {
-                    TextButton(onClick = onFinishRoute, modifier = Modifier.fillMaxWidth()) {
-                        Text("Finalizar ruta activa", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-                if (landscape) {
-                    destinations.chunked(2).forEach { rowItems ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            rowItems.forEach { item ->
-                                DestinationCard(
-                                    item = item,
-                                    onClick = { onDestinationSelected(item) },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                            if (rowItems.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
-                } else {
-                    destinations.forEach { item ->
-                        DestinationCard(item = item, onClick = { onDestinationSelected(item) })
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PrimaryRouteButton(routeActive: Boolean, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(76.dp),
-        shape = RoundedCornerShape(22.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-    ) {
-        Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-            Text(if (routeActive) "Volver al mapa" else "Iniciar ruta", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text(
-                if (routeActive) "La ruta continúa activa" else "Preparar sencillo e inventario",
-                color = Color.White.copy(alpha = .82f),
-            )
-        }
-        Text("→", fontSize = 28.sp)
-    }
-}
-
-@Composable
 private fun DestinationCard(
     item: HomeDestination,
     onClick: () -> Unit,
@@ -721,69 +618,14 @@ private fun DestinationCard(
                 modifier = Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(item.symbol, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                // Cuentas usa la Q de quetzal: no hay ícono de moneda local.
+                item.icon?.let { Icon(it, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                    ?: Text("Q", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             }
             Column(modifier = Modifier.padding(start = 14.dp).weight(1f)) {
                 Text(item.title, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                 Text(item.description, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
         }
-    }
-}
-
-@Composable
-private fun FirstIterationPlaceholder(
-    destination: HomeDestination,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().widthIn(max = 760.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(onClick = onBack) { Text("← Volver") }
-            Text(
-                destination.title,
-                modifier = Modifier.weight(1f),
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.size(72.dp))
-        }
-        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    modifier = Modifier.size(72.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(destination.symbol, color = MaterialTheme.colorScheme.primary, fontSize = 30.sp)
-                }
-                Spacer(Modifier.height(18.dp))
-                Text(destination.description, textAlign = TextAlign.Center)
-                Text(
-                    "Base preparada para la siguiente iteración",
-                    modifier = Modifier.padding(top = 6.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Preview(showBackground = true, widthDp = 800, heightDp = 1280)
-@Composable
-private fun HomePreview() {
-    CaudalAPPTheme {
-        HomeScreen(
-            routeActive = false,
-            onOpenMap = {},
-            onFinishRoute = {},
-            onDestinationSelected = {},
-        )
     }
 }

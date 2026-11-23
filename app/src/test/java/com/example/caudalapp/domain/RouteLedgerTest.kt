@@ -304,6 +304,19 @@ class RouteLedgerTest {
     }
 
     @Test
+    fun `el pendiente de cobro cuenta como deuda igual en la ruta y fuera de ella`() {
+        val ledger = RouteLedger.start(0, mapOf(bolsas to 1))
+        ledger.registerStoreSale("store-m", listOf(SaleLine(bolsas, requested = 2, delivered = 1, total = 40)), amountReceived = 0)
+        val inRoute = ledger.storeAccount("store-m")
+        val saved = ledger.outstandingAccountStates().single()
+
+        assertEquals(40, inRoute.totalOwed)
+        assertEquals(AccountSettlementPolicy.moneyDue(saved), inRoute.totalOwed)
+        assertEquals(StoreMarkerPolicy.resolve(inRoute, null), StoreMarkerPolicy.resolve(saved, null))
+        assertEquals(StoreMarkerState.INACTIVE, StoreMarkerPolicy.resolve(null as StoreAccountState?, null))
+    }
+
+    @Test
     fun `el cobro de deuda tambien salda lo pendiente de una entrega incompleta`() {
         val ledger = RouteLedger.start(0, mapOf(bolsas to 1))
         ledger.registerStoreSale("store-p", listOf(SaleLine(bolsas, requested = 2, delivered = 1, total = 40)), amountReceived = 0)

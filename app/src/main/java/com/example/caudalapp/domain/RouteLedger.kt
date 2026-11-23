@@ -52,6 +52,10 @@ data class StoreAccount(
     val moneyDue: Int
         get() = openDebts.sumOf { it.remainingAmount }
 
+    /** Todo el dinero que la tienda debe: deudas más cobros de entregas incompletas. Igual en todas las pantallas. */
+    val totalOwed: Int
+        get() = moneyDue + pendingPayments.values.sum()
+
     val hasPendingDelivery: Boolean
         get() = pendingDeliveries.values.any { it > 0 }
 
@@ -768,9 +772,18 @@ enum class StoreMarkerState {
 }
 
 object StoreMarkerPolicy {
-    fun resolve(account: StoreAccount, daysSinceLastSale: Int?): StoreMarkerState = when {
-        account.moneyDue > 0 -> StoreMarkerState.DEBT
-        account.hasPendingDelivery -> StoreMarkerState.PENDING_DELIVERY
+    fun resolve(account: StoreAccount, daysSinceLastSale: Int?): StoreMarkerState =
+        resolve(account.totalOwed, account.hasPendingDelivery, daysSinceLastSale)
+
+    fun resolve(account: StoreAccountState?, daysSinceLastSale: Int?): StoreMarkerState = resolve(
+        account?.let(AccountSettlementPolicy::moneyDue) ?: 0,
+        account?.pendingDeliveries?.values?.any { it > 0 } == true,
+        daysSinceLastSale,
+    )
+
+    private fun resolve(moneyOwed: Int, pendingDelivery: Boolean, daysSinceLastSale: Int?): StoreMarkerState = when {
+        moneyOwed > 0 -> StoreMarkerState.DEBT
+        pendingDelivery -> StoreMarkerState.PENDING_DELIVERY
         daysSinceLastSale != null && daysSinceLastSale <= 3 -> StoreMarkerState.RECENT
         daysSinceLastSale != null && daysSinceLastSale <= 7 -> StoreMarkerState.DUE_SOON
         else -> StoreMarkerState.INACTIVE

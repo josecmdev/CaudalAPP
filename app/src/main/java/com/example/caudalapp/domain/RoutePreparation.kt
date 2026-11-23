@@ -37,6 +37,8 @@ data class CompletedRouteRecord(
     val countedCash: Int? = null,
     val countedStock: Map<String, Int> = emptyMap(),
     val expectedStock: Map<String, Int> = emptyMap(),
+    /** Oculta del historial sin borrar: las ventas confirmadas no se eliminan. */
+    val archived: Boolean = false,
 )
 
 enum class RouteField {

@@ -20,6 +20,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -43,6 +48,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.ImeAction
 import com.example.caudalapp.domain.AccountSettlementPolicy
+import com.example.caudalapp.domain.StoreMarkerPolicy
 import com.example.caudalapp.domain.GeoPoint
 import com.example.caudalapp.domain.Store
 import com.example.caudalapp.domain.StoreAccountState
@@ -62,6 +68,7 @@ fun StoresScreen(
     onStateChanged: () -> Unit,
     onAccountsChanged: (List<StoreAccountState>, StoreAccountAdjustment) -> Unit,
     productName: (String) -> String,
+    daysSinceLastSaleByStore: Map<String, Int> = emptyMap(),
     modifier: Modifier = Modifier,
 ) {
     var revision by remember { mutableIntStateOf(0) }
@@ -199,7 +206,7 @@ fun StoresScreen(
         )
     }
 
-    val displayedStores = remember(revision) { stores.activeStores() }
+    val displayedStores = remember(stores, revision) { stores.activeStores() }
     Box(modifier = modifier.fillMaxSize()) {
         StoreMapLayer(
             stores = displayedStores,
@@ -207,7 +214,7 @@ fun StoresScreen(
             placementMode = placementMode,
             onCenterChanged = { center = it },
             onStoreSelected = { selectedStore = it },
-            markerState = { StoreMarkerState.INACTIVE },
+            markerState = { store -> StoreMarkerPolicy.resolve(accounts.firstOrNull { it.storeId == store.id }, daysSinceLastSaleByStore[store.id]) },
             moneyDue = { store -> obligationsFor(store.id, accounts).moneyDue },
             unitsPending = { store -> obligationsFor(store.id, accounts).unitsPending },
             focusLocation = initialFocus,
@@ -265,7 +272,7 @@ fun StoresScreen(
                 modifier = Modifier.align(Alignment.BottomStart).padding(20.dp).size(58.dp),
                 shape = CircleShape,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-            ) { Text("+", fontSize = 28.sp) }
+            ) { Icon(Icons.Default.Add, contentDescription = "Agregar tienda", modifier = Modifier.size(28.dp)) }
         }
     }
 }
@@ -273,7 +280,7 @@ fun StoresScreen(
 private fun obligationsFor(storeId: String, accounts: List<StoreAccountState>): StoreObligations {
     val account = accounts.firstOrNull { it.storeId == storeId } ?: return StoreObligations()
     return StoreObligations(
-        moneyDue = account.debts.sumOf { it.remainingAmount } + account.pendingPayments.values.sum(),
+        moneyDue = AccountSettlementPolicy.moneyDue(account),
         containersDue = account.pendingContainers.values.sum(),
         unitsPending = account.pendingDeliveries.values.sum(),
     )

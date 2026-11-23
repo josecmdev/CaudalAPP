@@ -26,6 +26,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -364,7 +369,7 @@ fun ActiveRouteScreen(
                     daysSinceLastSale = daysSinceLastSaleByStore[store.id],
                 )
             },
-            moneyDue = { store -> route.ledger.storeAccount(store.id).moneyDue },
+            moneyDue = { store -> route.ledger.storeAccount(store.id).totalOwed },
             unitsPending = { store ->
                 route.ledger.products().sumOf { route.ledger.storeAccount(store.id).unitsPending(it.id) }
             },
@@ -392,13 +397,9 @@ fun ActiveRouteScreen(
                     RouteClock(route.startedAtEpochMillis)
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { closeOpen = true }) {
-                    Text("Finalizar", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                }
-                Button(onClick = onExitMap) {
-                    Text("Salir del mapa", fontWeight = FontWeight.Bold)
-                }
+            Button(onClick = onExitMap) {
+                Icon(Icons.Default.Menu, contentDescription = null)
+                Text("Menú", modifier = Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold)
             }
         }
 
@@ -482,7 +483,7 @@ fun ActiveRouteScreen(
             shape = CircleShape,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
         ) {
-            Text("+", fontSize = 30.sp)
+            Icon(Icons.Default.Add, contentDescription = "Acciones de ruta", modifier = Modifier.size(30.dp))
         }
 
         if (placingStore) {

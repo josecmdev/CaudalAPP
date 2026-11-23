@@ -11,6 +11,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -102,7 +107,7 @@ fun StoreMapLayer(
             modifier = Modifier.align(Alignment.TopStart).padding(start = 18.dp, top = 104.dp).size(52.dp),
             shape = CircleShape,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-        ) { Text("◎", fontSize = 20.sp) }
+        ) { Icon(Icons.Default.LocationOn, contentDescription = "Ir a mi ubicación") }
 
         if (placementMode && showPlacementHint) {
             Text(

@@ -20,6 +20,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -70,8 +75,10 @@ fun HomeMapScreen(
     var namingLocation by remember { mutableStateOf<GeoPoint?>(null) }
     var panelExpanded by rememberSaveable { mutableStateOf(false) }
     val accountByStore = remember(accounts) { accounts.associateBy(StoreAccountState::storeId) }
-    val historicalSales = remember(previousRoutes) { previousRoutes.flatMap(CompletedRouteRecord::sales) }
-    val displayedStores = remember(revision) { stores.activeStores() }
+    val daysSinceLastSaleByStore = remember(previousRoutes) {
+        StoreMarkerPolicy.daysSinceLastSaleByStore(previousRoutes.flatMap(CompletedRouteRecord::sales))
+    }
+    val displayedStores = remember(stores, revision) { stores.activeStores() }
 
     namingLocation?.let { location ->
         StoreNameDialog(
@@ -141,16 +148,7 @@ fun HomeMapScreen(
             onCenterChanged = { center = it },
             onStoreSelected = { selectedStore = it },
             markerState = { store ->
-                val account = accountByStore[store.id]
-                when {
-                    account.moneyDue() > 0 -> StoreMarkerState.DEBT
-                    account.unitsPending() > 0 -> StoreMarkerState.PENDING_DELIVERY
-                    else -> when (val days = StoreMarkerPolicy.daysSinceLastSale(store.id, historicalSales)) {
-                        in 0..3 -> StoreMarkerState.RECENT
-                        in 4..7 -> StoreMarkerState.DUE_SOON
-                        else -> StoreMarkerState.INACTIVE
-                    }
-                }
+                StoreMarkerPolicy.resolve(accountByStore[store.id], daysSinceLastSaleByStore[store.id])
             },
             moneyDue = { store -> accountByStore[store.id].moneyDue() },
             unitsPending = { store -> accountByStore[store.id].unitsPending() },
@@ -164,7 +162,10 @@ fun HomeMapScreen(
             onClick = onExitMap,
             modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(12.dp),
             shape = RoundedCornerShape(18.dp),
-        ) { Text("Salir del mapa", fontWeight = FontWeight.Bold) }
+        ) {
+            Icon(Icons.Default.Menu, contentDescription = null)
+            Text("Menú", modifier = Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold)
+        }
 
         if (placementMode) {
             Row(
@@ -181,7 +182,7 @@ fun HomeMapScreen(
                 modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = controlsBottom).size(58.dp),
                 shape = CircleShape,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-            ) { Text("+", fontSize = 28.sp) }
+            ) { Icon(Icons.Default.Add, contentDescription = "Agregar tienda", modifier = Modifier.size(28.dp)) }
             Button(
                 onClick = onStartRoute,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = controlsBottom),

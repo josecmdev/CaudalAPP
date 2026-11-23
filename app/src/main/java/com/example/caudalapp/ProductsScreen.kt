@@ -1,9 +1,16 @@
 package com.example.caudalapp
 
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
-import android.widget.ImageView
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -41,7 +48,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.DialogProperties
 import com.example.caudalapp.domain.Product
 import com.example.caudalapp.domain.ProductChangeResult
@@ -149,16 +155,29 @@ private fun ProductImage(product: Product, modifier: Modifier = Modifier) {
             Text(product.name.take(1).uppercase(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         }
     } else {
-        AndroidView(
-            factory = { context ->
-                ImageView(context).apply {
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                }
-            },
-            update = { image -> image.setImageURI(Uri.parse(uri)) },
-            modifier = modifier,
-        )
+        val context = LocalContext.current
+        val thumbnail by produceState<android.graphics.Bitmap?>(null, uri) {
+            value = withContext(Dispatchers.IO) { runCatching { loadThumbnail(context, Uri.parse(uri)) }.getOrNull() }
+        }
+        thumbnail?.let { bitmap ->
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = product.name,
+                contentScale = ContentScale.Crop,
+                modifier = modifier.clip(RoundedCornerShape(14.dp)),
+            )
+        } ?: Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant))
+    }
+}
+
+/** Decodifica reducida (unos 256 px) para no cargar fotos de 12 MP completas en cada fila. */
+private fun loadThumbnail(context: android.content.Context, uri: Uri, targetPx: Int = 256): android.graphics.Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    var sample = 1
+    while (bounds.outWidth / (sample * 2) >= targetPx && bounds.outHeight / (sample * 2) >= targetPx) sample *= 2
+    return context.contentResolver.openInputStream(uri)?.use {
+        BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
     }
 }
 

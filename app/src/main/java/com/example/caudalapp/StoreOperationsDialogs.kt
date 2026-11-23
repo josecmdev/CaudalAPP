@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -70,11 +71,11 @@ fun StoreDetailsDialog(
         title = { Text(store.name, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                AccountRow("Debe dinero", "Q${account.moneyDue}", account.moneyDue > 0)
+                AccountRow("Debe dinero", "Q${account.totalOwed}", account.totalOwed > 0)
                 AccountRow("Debe envases", containersDue.toString(), containersDue > 0)
                 AccountRow("Falta entregar", unitsPending.toString(), unitsPending > 0)
                 Button(onClick = onNewSale, modifier = Modifier.fillMaxWidth()) { Text("Nueva venta") }
-                if (account.moneyDue > 0) {
+                if (account.totalOwed > 0) {
                     Button(onClick = onCollectDebt, modifier = Modifier.fillMaxWidth()) { Text("Registrar pago") }
                 }
                 if (containersDue > 0) {
@@ -122,6 +123,7 @@ fun StoreSaleDialog(
     var creditEnabled by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val cart = remember { mutableStateListOf<StoreSaleLineUi>() }
+    var submitted by remember { mutableStateOf(false) }
     val invoiceTotal = cart.sumOf(StoreSaleLineUi::total)
     val hasPotentialPending = cart
         .groupBy { it.product.id }
@@ -131,7 +133,8 @@ fun StoreSaleDialog(
 
     AlertDialog(
         onDismissRequest = {},
-        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false, usePlatformDefaultWidth = false),
+        modifier = Modifier.fillMaxWidth(.92f).widthIn(max = 760.dp),
         shape = RoundedCornerShape(26.dp),
         title = { Text("Venta · ${store.name}", fontWeight = FontWeight.Bold) },
         text = {
@@ -293,8 +296,9 @@ fun StoreSaleDialog(
         },
         confirmButton = {
             Button(
-                enabled = cart.isNotEmpty(),
+                enabled = cart.isNotEmpty() && !submitted,
                 onClick = {
+                    if (submitted) return@Button
                     val remainingStock = products.associate { product ->
                         product.id to route.ledger.availableStock(product.id).coerceAtLeast(0)
                     }.toMutableMap()
@@ -321,6 +325,7 @@ fun StoreSaleDialog(
                     when {
                         received > invoiceTotal -> error = "El efectivo no puede superar Q$invoiceTotal"
                         else -> {
+                            submitted = true
                             route.ledger.registerStoreSale(store.id, lines, received, location = store.location)
                             onRegistered(lines.sumOf(SaleLine::delivered), received, pending)
                         }
@@ -334,9 +339,10 @@ fun StoreSaleDialog(
 
 @Composable
 fun CollectDebtDialog(route: ActiveRoute, store: Store, onDismiss: () -> Unit, onCollected: (Int) -> Unit) {
-    val due = route.ledger.storeAccount(store.id).moneyDue
+    val due = route.ledger.storeAccount(store.id).totalOwed
     var amount by remember { mutableStateOf(due.toString()) }
     var error by remember { mutableStateOf(false) }
+    var submitted by remember { mutableStateOf(false) }
     SimpleAmountDialog(
         title = "Cobrar a ${store.name}",
         description = "Saldo pendiente: Q$due",
@@ -347,7 +353,9 @@ fun CollectDebtDialog(route: ActiveRoute, store: Store, onDismiss: () -> Unit, o
         onDismiss = onDismiss,
         onConfirm = {
             val value = amount.toIntOrNull() ?: 0
+            if (submitted) return@SimpleAmountDialog
             if (value !in 1..due) error = true else {
+                submitted = true
                 route.ledger.collectDebt(store.id, value)
                 onCollected(value)
             }

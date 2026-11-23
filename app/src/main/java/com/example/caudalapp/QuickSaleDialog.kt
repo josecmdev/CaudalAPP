@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -68,6 +69,7 @@ fun QuickSaleDialog(
     var customerPhone by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     val cart = remember { mutableStateListOf<QuickSaleLineUi>() }
+    var submitted by remember { mutableStateOf(false) }
     val cartTotal = cart.sumOf(QuickSaleLineUi::total)
 
     AlertDialog(
@@ -75,7 +77,9 @@ fun QuickSaleDialog(
         properties = DialogProperties(
             dismissOnBackPress = false,
             dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
         ),
+        modifier = Modifier.fillMaxWidth(.92f).widthIn(max = 760.dp),
         shape = RoundedCornerShape(26.dp),
         title = {
             Column {
@@ -244,8 +248,9 @@ fun QuickSaleDialog(
         },
         confirmButton = {
             Button(
-                enabled = cart.isNotEmpty(),
+                enabled = cart.isNotEmpty() && !submitted,
                 onClick = {
+                    if (submitted) return@Button
                     val lines = cart.map { line ->
                         SaleLine(
                             product = line.product,
@@ -264,6 +269,7 @@ fun QuickSaleDialog(
                         customerPhone = customerPhone,
                     )
                     if (result.accepted) {
+                        submitted = true
                         onSaleRegistered(lines.sumOf(SaleLine::delivered), cartTotal)
                     } else {
                         error = result.reason

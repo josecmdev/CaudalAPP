@@ -195,6 +195,7 @@ private data class CompletedRouteDto(
     val countedCash: Int? = null,
     val countedStock: Map<String, Int> = emptyMap(),
     val expectedStock: Map<String, Int> = emptyMap(),
+    val archived: Boolean = false,
 )
 
 @Serializable
@@ -256,6 +257,7 @@ private fun CaudalRestoredState.toDto() = PersistedStateDto(
             record.countedCash,
             record.countedStock,
             record.expectedStock,
+            record.archived,
         )
     },
     outstandingAccounts = outstandingAccounts.map(StoreAccountState::toDto),
@@ -340,6 +342,7 @@ private fun PersistedStateDto.toDomain(): CaudalRestoredState {
                 dto.countedCash,
                 dto.countedStock,
                 dto.expectedStock,
+                dto.archived,
             )
         },
         outstandingAccounts = outstandingAccounts.map(AccountDto::toDomain),

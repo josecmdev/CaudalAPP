@@ -57,6 +57,7 @@ class CaudalStateStoreTest {
             activeDurationMillis = 180_000L,
             countedCash = 250,
             countedStock = mapOf(bags.id to 12),
+            archived = true,
         )
         val products = ProductDirectory()
         products.addProduct("Refresco", 12, false, "content://refresco")
@@ -98,6 +99,7 @@ class CaudalStateStoreTest {
         assertEquals(1, decoded.completedRoutes.single().sales.size)
         assertEquals(180_000L, decoded.completedRoutes.single().activeDurationMillis)
         assertEquals(250, decoded.completedRoutes.single().countedCash)
+        assertEquals(true, decoded.completedRoutes.single().archived)
         assertNotNull(decoded.products.allProducts().firstOrNull { it.name == "Refresco" })
         assertEquals(3, decoded.outstandingAccounts.single().pendingDeliveries.getValue(bags.id))
         assertEquals(25, decoded.accountAdjustments.single().amount)

@@ -48,6 +48,7 @@ fun RouteCloseDialog(
     var countPhysical by remember { mutableStateOf(false) }
     var cashText by remember { mutableStateOf("") }
     var discardConfirmation by remember { mutableStateOf(false) }
+    var finishing by remember { mutableStateOf(false) }
     val stock = remember {
         mutableStateMapOf<String, String>().apply {
             route.ledger.products().filterNot { it.archived }.forEach { put(it.id, "") }
@@ -61,7 +62,7 @@ fun RouteCloseDialog(
                 Text("Se eliminarán ventas, gastos, recargas, transferencias, deudas nuevas y el recorrido GPS de esta ruta. Esta acción no se puede deshacer.")
             },
             confirmButton = {
-                Button(onClick = onDiscard) { Text("Eliminar ruta") }
+                Button(enabled = !finishing, onClick = { finishing = true; onDiscard() }) { Text("Eliminar ruta") }
             },
             dismissButton = {
                 TextButton(onClick = { discardConfirmation = false }) { Text("Cancelar") }
@@ -130,13 +131,15 @@ fun RouteCloseDialog(
             }
         },
         confirmButton = {
-            Button(onClick = {
+            Button(enabled = !finishing, onClick = {
+                if (finishing) return@Button
+                finishing = true
                 onFinish(
                     RouteCloseResult(
                         summary = summary,
                         countedCash = cashText.toIntOrNull().takeIf { countPhysical },
                         countedStock = if (countPhysical) {
-                            stock.mapValues { it.value.toIntOrNull() ?: 0 }
+                            stock.mapNotNull { (id, value) -> value.toIntOrNull()?.let { id to it } }.toMap()
                         } else {
                             emptyMap()
                         },
