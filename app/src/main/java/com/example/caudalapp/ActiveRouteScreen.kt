@@ -29,6 +29,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -59,6 +69,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import com.example.caudalapp.domain.AccountSettlementPolicy
 import com.example.caudalapp.domain.ActiveRoute
 import com.example.caudalapp.domain.GeoPoint
 import com.example.caudalapp.domain.Store
@@ -106,6 +117,7 @@ fun ActiveRouteScreen(
     var kennethTransferOpen by remember { mutableStateOf(false) }
     var accountsOpen by remember { mutableStateOf(false) }
     var startReminderShown by rememberSaveable(route.startedAtEpochMillis) { mutableStateOf(false) }
+    var pendingNoticeVisible by remember { mutableStateOf(false) }
     var auditOpen by remember { mutableStateOf(false) }
     var focusLocation by remember { mutableStateOf<GeoPoint?>(null) }
     var focusRequestId by remember { mutableIntStateOf(0) }
@@ -134,9 +146,12 @@ fun ActiveRouteScreen(
     }
 
     LaunchedEffect(route.startedAtEpochMillis) {
-        if (!startReminderShown && route.ledger.outstandingAccountStates().isNotEmpty()) {
+        // Aviso discreto en vez de abrir la lista encima del mapa al empezar.
+        if (!startReminderShown && route.ledger.outstandingAccountStates().any(AccountSettlementPolicy::hasPending)) {
             startReminderShown = true
-            accountsOpen = true
+            pendingNoticeVisible = true
+            delay(12_000)
+            pendingNoticeVisible = false
         }
     }
 
@@ -398,6 +413,24 @@ fun ActiveRouteScreen(
                     RouteClock(route.startedAtEpochMillis)
                 }
             }
+            Box(modifier = Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                AnimatedVisibility(
+                    visible = pendingNoticeVisible,
+                    enter = fadeIn() + slideInVertically { -it },
+                    exit = fadeOut() + slideOutVertically { -it },
+                ) {
+                    val pendingAccounts = remember(ledgerRevision) { route.ledger.outstandingAccountStates().filter(AccountSettlementPolicy::hasPending) }
+                    PendingAccountsNotice(
+                        count = pendingAccounts.size,
+                        moneyDue = pendingAccounts.sumOf(AccountSettlementPolicy::moneyDue),
+                        onOpen = {
+                            pendingNoticeVisible = false
+                            accountsOpen = true
+                        },
+                        onDismiss = { pendingNoticeVisible = false },
+                    )
+                }
+            }
             Button(onClick = onExitMap) {
                 Icon(Icons.Default.Menu, contentDescription = null)
                 Text("Menú", modifier = Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold)
@@ -614,39 +647,123 @@ private fun RouteSummaryPanel(
                         Text("Ruta", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                     }
                 } else {
-                    Text("Ruta e inventario ▲", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            route.ledger.products().filterNot { it.archived }
+                                .joinToString("  ·  ") { "${it.name} ${route.ledger.displayStock(it.id)}" },
+                            modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Mostrar ruta e inventario", tint = MaterialTheme.colorScheme.primary)
+                    }
                 }
             }
         } else {
-          Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            AnimatedVisibility(visible = true) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(route.name, fontWeight = FontWeight.Bold)
-                    RouteClock(route.startedAtEpochMillis)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Efectivo", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(route.name, fontWeight = FontWeight.Bold)
+                        RouteClock(route.startedAtEpochMillis)
                     }
-                    route.ledger.products().filterNot { it.archived }.forEach { product ->
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(product.name)
-                            Text(route.ledger.displayStock(product.id).toString(), fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    TextButton(onClick = onAccountsClick, modifier = Modifier.fillMaxWidth()) {
-                        Text("Cuentas pendientes →", fontWeight = FontWeight.SemiBold)
-                    }
-                    TextButton(onClick = onAuditClick, modifier = Modifier.fillMaxWidth()) {
-                        Text("Movimientos (${route.ledger.auditEntries.size}) →", fontWeight = FontWeight.SemiBold)
+                    IconButton(onClick = onToggle) {
+                        Icon(
+                            if (landscape) Icons.Default.KeyboardArrowRight else Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Ocultar panel",
+                        )
                     }
                 }
-            }
-            TextButton(onClick = onToggle, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    if (landscape) "Ocultar ›" else "Ocultar ▼",
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Efectivo esperado", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Text("En el camión", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                route.ledger.products().filterNot { it.archived }.forEach { product ->
+                    val quantity = route.ledger.displayStock(product.id)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(product.name)
+                        Text(
+                            quantity.toString(),
+                            fontWeight = FontWeight.Bold,
+                            color = if (quantity < 0) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+                Spacer(Modifier.size(2.dp))
+                PanelActionButton(
+                    icon = Icons.Default.Warning,
+                    label = "Cuentas pendientes",
+                    badge = route.ledger.outstandingAccountStates().count(AccountSettlementPolicy::hasPending).takeIf { it > 0 }?.toString(),
+                    onClick = onAccountsClick,
+                )
+                PanelActionButton(
+                    icon = Icons.Default.List,
+                    label = "Movimientos",
+                    badge = route.ledger.auditEntries.size.takeIf { it > 0 }?.toString(),
+                    onClick = onAuditClick,
                 )
             }
-          }
+        }
+    }
+}
+
+@Composable
+private fun PanelActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    badge: String?,
+    onClick: () -> Unit,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Text(label, modifier = Modifier.weight(1f).padding(start = 10.dp), fontWeight = FontWeight.SemiBold)
+        badge?.let {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+                Text(
+                    it,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PendingAccountsNotice(count: Int, moneyDue: Int, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    Surface(
+        onClick = onOpen,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        shadowElevation = 5.dp,
+    ) {
+        Row(modifier = Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(18.dp))
+            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                Text(
+                    if (count == 1) "1 tienda con pendientes" else "$count tiendas con pendientes",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+                Text(
+                    if (moneyDue > 0) "Q$moneyDue por cobrar · toca para ver" else "Toca para ver",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, contentDescription = "Cerrar aviso", tint = MaterialTheme.colorScheme.onTertiaryContainer)
+            }
         }
     }
 }

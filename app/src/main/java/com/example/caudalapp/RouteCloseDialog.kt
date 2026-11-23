@@ -56,7 +56,7 @@ fun RouteCloseDialog(
     if (discardConfirmation) {
         AlertDialog(
             onDismissRequest = { discardConfirmation = false },
-            title = { Text("¿Salir sin guardar?", fontWeight = FontWeight.Bold) },
+            title = { Text("¿Eliminar esta ruta?", fontWeight = FontWeight.Bold) },
             text = {
                 Text("Se eliminarán ventas, gastos, recargas, transferencias, deudas nuevas y el recorrido GPS de esta ruta. Esta acción no se puede deshacer.")
             },
@@ -149,7 +149,7 @@ fun RouteCloseDialog(
         dismissButton = {
             Row {
                 TextButton(onClick = { discardConfirmation = true }) {
-                    Text("Salir sin guardar", color = MaterialTheme.colorScheme.error)
+                    Text("Eliminar ruta", color = MaterialTheme.colorScheme.error)
                 }
                 TextButton(onClick = onDismiss) { Text("Seguir en ruta") }
             }

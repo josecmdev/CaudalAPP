@@ -121,6 +121,34 @@ private fun CaudalApp(appState: CaudalViewModel) {
         appState.mapVisible = true
     }
     var exitConfirmOpen by remember { mutableStateOf(false) }
+    var discardConfirmOpen by remember { mutableStateOf(false) }
+    val discardActiveRoute = {
+        appState.activeRoute?.let { route ->
+            val trackId = RouteTrackingService.routeId(route.startedAtEpochMillis)
+            RouteTrackingService.stop(context)
+            RouteTrackingService.trackStore(context).delete(trackId)
+            appState.discardRoute()
+        }
+    }
+    if (discardConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { discardConfirmOpen = false },
+            title = { Text("¿Eliminar esta ruta?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Se borran las ventas, gastos, recargas, transferencias, deudas nuevas y el recorrido GPS de esta ruta. " +
+                        "Las cuentas pendientes vuelven a como estaban antes de iniciarla. No se puede deshacer.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    discardConfirmOpen = false
+                    discardActiveRoute()
+                }) { Text("Eliminar ruta", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { Button(onClick = { discardConfirmOpen = false }) { Text("Conservar ruta") } },
+        )
+    }
     LaunchedEffect(appState) {
         appState.completionTransitionEvents().collect { completionTransitionId++ }
     }
@@ -164,12 +192,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
                     val trackPointCount = RouteTrackingService.trackStore(context).count(trackId)
                     appState.finishRoute(closeResult, trackId, activeDurationMillis, trackPointCount)
                 },
-                onRouteDiscarded = {
-                    val trackId = RouteTrackingService.routeId(currentRoute.startedAtEpochMillis)
-                    RouteTrackingService.stop(context)
-                    RouteTrackingService.trackStore(context).delete(trackId)
-                    appState.discardRoute()
-                },
+                onRouteDiscarded = { discardActiveRoute() },
                 onStateChanged = appState::persist,
                 onLocationPermissionGranted = {
                     val trackId = RouteTrackingService.routeId(currentRoute.startedAtEpochMillis)
@@ -286,6 +309,10 @@ private fun CaudalApp(appState: CaudalViewModel) {
                   mapMenuOpen = false
                   appState.routeCloseRequested = true
               },
+              onDiscardRoute = {
+                  mapMenuOpen = false
+                  discardConfirmOpen = true
+              },
               onDestinationSelected = { destination ->
                   mapMenuOpen = false
                   appState.storeFocusId = null
@@ -303,6 +330,7 @@ private fun MapOptionsDialog(
     routeActive: Boolean,
     onDismiss: () -> Unit,
     onFinishRoute: () -> Unit,
+    onDiscardRoute: () -> Unit,
     onDestinationSelected: (HomeDestination) -> Unit,
 ) {
     val destinations = HomeDestination.entries.filter { it != HomeDestination.NEW_ROUTE }
@@ -330,17 +358,14 @@ private fun MapOptionsDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Finalizar vive aquí, lejos del mapa, para que no se toque por accidente a media ruta.
-                        if (routeActive) {
-                            TextButton(onClick = onFinishRoute) {
-                                Text("Finalizar ruta", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        Button(onClick = onDismiss) { Text("Volver al mapa") }
-                    }
+                    Button(onClick = onDismiss) { Text("Volver al mapa") }
                 }
                 Spacer(Modifier.height(18.dp))
+                // Cerrar la ruta vive aquí, lejos del mapa, para que no se toque por accidente a media ruta.
+                if (routeActive) {
+                    ActiveRouteActions(onFinishRoute = onFinishRoute, onDiscardRoute = onDiscardRoute)
+                    Spacer(Modifier.height(18.dp))
+                }
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     val columns = if (maxWidth >= 700.dp) 2 else 1
                     Column(
@@ -481,6 +506,39 @@ private fun DestinationCard(
             Column(modifier = Modifier.padding(start = 14.dp).weight(1f)) {
                 Text(item.title, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                 Text(item.description, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveRouteActions(onFinishRoute: () -> Unit, onDiscardRoute: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .45f)),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Ruta activa", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text(
+                "Finalizar guarda el cierre en el historial. Eliminar borra la ruta como si no se hubiera hecho.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Button(onClick = onFinishRoute, modifier = Modifier.weight(1f)) {
+                    Text("Finalizar y guardar", fontWeight = FontWeight.Bold)
+                }
+                androidx.compose.material3.OutlinedButton(
+                    onClick = onDiscardRoute,
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                ) {
+                    Text("Eliminar ruta", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }

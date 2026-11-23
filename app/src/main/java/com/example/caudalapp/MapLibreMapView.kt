@@ -618,5 +618,6 @@ private fun safelyEnableCaudalLocation(
         // MapLibre executes this callback from JNI. Letting a Java exception escape here
         // aborts the complete Android process instead of producing a normal crash report.
         Log.e(CAUDAL_MAP_LOG_TAG, "No se pudo activar la capa de ubicación", error)
+        DiagnosticReporter.logError("Mapa: activar capa de ubicación", error)
     }
 }

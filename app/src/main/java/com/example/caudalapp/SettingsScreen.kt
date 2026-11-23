@@ -59,32 +59,19 @@ fun SettingsScreen(
             Text("Ajustes", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
         SettingsCard("Apariencia", "Elige cómo se muestra Caudal App") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AppTheme.entries.forEach { theme ->
-                    OutlinedButton(onClick = { onSettingsChanged(settings.copy(theme = theme)) }) {
-                        Text(if (settings.theme == theme) "✓ ${theme.label}" else theme.label)
-                    }
-                }
-            }
+            ChoiceRow(AppTheme.entries, settings.theme, { it.label }) { onSettingsChanged(settings.copy(theme = it)) }
             Text("Estilo del mapa", fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AppMapStyle.entries.forEach { mapStyle ->
-                    OutlinedButton(onClick = { onSettingsChanged(settings.copy(mapStyle = mapStyle)) }) {
-                        Text(if (settings.mapStyle == mapStyle) "✓ ${mapStyle.label}" else mapStyle.label)
-                    }
-                }
-            }
+            ChoiceRow(AppMapStyle.entries, settings.mapStyle, { it.label }) { onSettingsChanged(settings.copy(mapStyle = it)) }
         }
         SettingsCard("Seguimiento GPS", "Frecuencia de actualización durante una ruta") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(1, 3, 5, 10).forEach { seconds ->
-                    OutlinedButton(onClick = {
-                        onSettingsChanged(settings.copy(gpsIntervalSeconds = seconds))
-                    }) {
-                        Text(if (settings.gpsIntervalSeconds == seconds) "✓ ${seconds}s" else "${seconds}s")
-                    }
-                }
+            ChoiceRow(listOf(1, 3, 5, 10), settings.gpsIntervalSeconds, { "${it} s" }) {
+                onSettingsChanged(settings.copy(gpsIntervalSeconds = it))
             }
+            Text(
+                "1 s dibuja el recorrido con más detalle. 3 s gasta un poco menos de batería y basta para la ruta. " +
+                    "Detenido, la app ya baja sola a una lectura cada 10 s.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             SettingsSwitch(
                 title = "Seguimiento automático",
                 description = "El mapa vuelve al vehículo después de moverlo",
@@ -98,12 +85,6 @@ fun SettingsScreen(
                 description = "Confirma ventas y cambios con respuesta táctil",
                 checked = settings.hapticFeedback,
                 onCheckedChange = { onSettingsChanged(settings.copy(hapticFeedback = it)) },
-            )
-        }
-        SettingsCard("Marcadores personalizados", "Los íconos se cargan desde assets/map/markers") {
-            Text(
-                "Puedes reemplazar los cinco PNG de estado sin cambiar el código. Si falta alguno, se usa el marcador de Caudal App.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         SettingsCard("Respaldo de datos", "Para no perder la información si se pierde o se cambia la tablet") {
@@ -123,7 +104,10 @@ fun SettingsScreen(
                     scope.launch {
                         backupMessage = runCatching { onExportData() }.fold(
                             onSuccess = { null },
-                            onFailure = { "No se pudo crear el respaldo: ${it.message ?: "error desconocido"}" },
+                            onFailure = {
+                                DiagnosticReporter.logError("Exportar respaldo", it)
+                                "No se pudo crear el respaldo: ${it.message ?: "error desconocido"}"
+                            },
                         )
                         backupBusy = false
                     }
@@ -150,7 +134,6 @@ fun SettingsScreen(
                 )
             }
             backupMessage?.let { Text(it, fontWeight = FontWeight.SemiBold) }
-            Text("Caudal App 1.0", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         pendingRestore?.let { uri ->
             AlertDialog(
@@ -169,7 +152,10 @@ fun SettingsScreen(
                         scope.launch {
                             backupMessage = runCatching { onRestoreData(uri) }.fold(
                                 onSuccess = { "Respaldo restaurado correctamente." },
-                                onFailure = { it.message ?: "No se pudo restaurar el respaldo." },
+                                onFailure = {
+                                    DiagnosticReporter.logError("Restaurar respaldo", it)
+                                    it.message ?: "No se pudo restaurar el respaldo."
+                                },
                             )
                             backupBusy = false
                         }
@@ -178,13 +164,14 @@ fun SettingsScreen(
                 dismissButton = { TextButton(onClick = { pendingRestore = null }) { Text("Cancelar") } },
             )
         }
-        SettingsCard("Diagnóstico", "Guarda los errores aunque no lleves la computadora") {
+        SettingsCard("Diagnóstico", "La app guarda sola los errores y cierres inesperados") {
             Text(
-                "Genera un archivo que puedes enviar a Google Drive, correo, WhatsApp u otra aplicación instalada.",
+                "Si algo falla, toca el botón y manda el archivo .txt por WhatsApp, correo o Drive. " +
+                    "Ese archivo es el que necesita Claude para encontrar y arreglar el problema.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedButton(onClick = onExportDiagnostics, modifier = Modifier.fillMaxWidth()) {
-                Text("Enviar reporte de diagnóstico")
+            Button(onClick = onExportDiagnostics, modifier = Modifier.fillMaxWidth()) {
+                Text("Compartir reporte de errores (.txt)")
             }
         }
     }
@@ -216,5 +203,19 @@ private fun SettingsSwitch(
             Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun <T> ChoiceRow(options: List<T>, selected: T, label: (T) -> String, onSelected: (T) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { option ->
+            androidx.compose.material3.FilterChip(
+                selected = option == selected,
+                onClick = { onSelected(option) },
+                label = { Text(label(option), modifier = Modifier.padding(vertical = 8.dp)) },
+                shape = RoundedCornerShape(14.dp),
+            )
+        }
     }
 }
