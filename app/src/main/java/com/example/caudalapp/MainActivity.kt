@@ -84,7 +84,9 @@ import com.example.caudalapp.persistence.CaudalStateWriter
 import com.example.caudalapp.persistence.detachedCopy
 import androidx.lifecycle.ViewModel
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 
@@ -168,6 +170,11 @@ class CaudalViewModel : ViewModel() {
         accountAdjustments.clear()
         accountAdjustments.addAll(restored.accountAdjustments)
         products = restored.products
+    }
+
+    fun applyBackup(restored: CaudalRestoredState) {
+        applyRestoredState(restored)
+        storeFocusId = null
     }
 
     /** Guarda en segundo plano para no congelar la pantalla en cada venta. */
@@ -418,6 +425,18 @@ private fun CaudalApp(appState: CaudalViewModel) {
                 settings = appState.settings,
                 onSettingsChanged = appState::updateSettings,
                 onExportDiagnostics = { DiagnosticReporter.share(activityContext) },
+                routeActive = appState.activeRoute != null,
+                onExportData = {
+                    appState.persist()
+                    // Por el hilo de guardado: así el respaldo incluye el guardado que se acaba de pedir.
+                    val uri = withContext(Dispatchers.IO) { CaudalStateWriter.runBlocking { DataBackup.prepare(context) } }
+                    DataBackup.share(activityContext, uri)
+                },
+                onRestoreData = { uri ->
+                    check(appState.activeRoute == null) { "Cierra la ruta activa para poder restaurar un respaldo." }
+                    val restored = withContext(Dispatchers.IO) { CaudalStateWriter.runBlocking { DataBackup.restore(context, uri) } }
+                    appState.applyBackup(restored)
+                },
                 onBack = returnToMap,
                 modifier = Modifier.padding(padding),
             )
