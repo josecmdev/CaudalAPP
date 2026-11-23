@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -57,7 +59,8 @@ fun RoutePreparationScreen(
     val focusManager = LocalFocusManager.current
 
     Column(
-        modifier = modifier.fillMaxSize().imePadding(),
+        // Scaffold padding already covers the nav bar; without consuming it imePadding counts it twice.
+        modifier = modifier.fillMaxSize().consumeWindowInsets(WindowInsets.navigationBars).imePadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(
@@ -73,12 +76,13 @@ fun RoutePreparationScreen(
             )
         }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().widthIn(max = 820.dp).weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+        // Plain Column: with only a few products a lazy list just recycles focused text fields.
+        Column(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 820.dp).weight(1f)
+                .verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item {
+            Column {
                 Text("Nombre", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Row(
                     modifier = Modifier.padding(top = 8.dp),
@@ -103,7 +107,7 @@ fun RoutePreparationScreen(
                     shape = RoundedCornerShape(16.dp),
                 )
             }
-            item {
+            Column {
                 Text("Sencillo inicial", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 OutlinedTextField(
                     value = initialCash,
@@ -118,7 +122,7 @@ fun RoutePreparationScreen(
                     shape = RoundedCornerShape(16.dp),
                 )
             }
-            item {
+            Column {
                 Text("Inventario inicial", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
                     "Escribe lo que se cargó hoy en el camión.",
@@ -126,7 +130,7 @@ fun RoutePreparationScreen(
                     modifier = Modifier.padding(top = 3.dp),
                 )
             }
-            itemsIndexed(products, key = { _, product -> product.id }) { index, product ->
+            products.forEachIndexed { index, product ->
                 InventoryInputRow(
                     product = product,
                     quantity = stock.getValue(product.id),
@@ -137,7 +141,7 @@ fun RoutePreparationScreen(
                 )
             }
             errorMessage?.let { message ->
-                item { Text(message, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) }
+                Text(message, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
             }
         }
 
