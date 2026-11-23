@@ -49,6 +49,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
+import com.example.caudalapp.domain.ProductCatalog
 import com.example.caudalapp.domain.Product
 import com.example.caudalapp.domain.ProductChangeResult
 import com.example.caudalapp.domain.ProductDirectory
@@ -130,7 +131,7 @@ private fun ProductCard(product: Product, onEdit: () -> Unit, onArchiveToggle: (
                 Text(product.name, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                 Text(
                     buildString {
-                        append(product.defaultSuggestedTotal?.let { "Sugerido Q$it" } ?: "Precio libre")
+                        append(product.defaultSuggestedTotal?.let { "Q$it ${if (product.id == ProductCatalog.BAGS.id) "por fardo de 18" else "por unidad"}" } ?: "Precio libre")
                         if (product.returnable) append(" · Envase retornable")
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -212,7 +213,7 @@ private fun ProductEditorDialog(
                 OutlinedTextField(
                     suggested,
                     { suggested = it.filter(Char::isDigit).take(7); error = null },
-                    label = { Text("Precio sugerido (opcional)") },
+                    label = { Text(if (product?.id == ProductCatalog.BAGS.id) "Precio por fardo de 18 (opcional)" else "Precio por unidad (opcional)") },
                     prefix = { Text("Q ") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,

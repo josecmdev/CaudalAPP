@@ -28,6 +28,21 @@ class SuggestedPricePolicyTest {
     }
 
     @Test
+    fun `el refresco cobra su precio por unidad y respeta el precio editado`() {
+        assertEquals(18, SuggestedPricePolicy.forQuantity(ProductCatalog.SODA, 1))
+        assertEquals(36, SuggestedPricePolicy.forQuantity(ProductCatalog.SODA, 2))
+        assertEquals(40, SuggestedPricePolicy.forQuantity(ProductCatalog.SODA.copy(defaultSuggestedTotal = 20), 2))
+        assertEquals(110, SuggestedPricePolicy.forQuantity(ProductCatalog.BAGS.copy(defaultSuggestedTotal = 55), 36))
+    }
+
+    @Test
+    fun `una tablet con productos guardados recibe el refresco nuevo`() {
+        val restored = ProductDirectory.restore(listOf(ProductCatalog.BAGS.copy(defaultSuggestedTotal = 55)))
+        assertEquals(55, restored.get(ProductCatalog.BAGS.id)?.defaultSuggestedTotal)
+        assertEquals("Refresco", restored.get(ProductCatalog.SODA.id)?.name)
+    }
+
+    @Test
     fun `recuerda el ultimo total de la misma tienda producto y cantidad`() {
         val product = ProductCatalog.BAGS
         val older = SaleRecord(

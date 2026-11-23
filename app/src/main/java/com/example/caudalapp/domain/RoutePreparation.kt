@@ -5,8 +5,9 @@ object ProductCatalog {
     val WATER_JUG = Product(id = "water-jug", name = "Garrafón", defaultSuggestedTotal = 8, returnable = true)
     val GAS_CYLINDER = Product(id = "gas-cylinder", name = "Gas", returnable = true)
     val EGGS = Product(id = "eggs", name = "Huevo")
+    val SODA = Product(id = "soda", name = "Refresco", defaultSuggestedTotal = 18)
 
-    val initialProducts = listOf(BAGS, WATER_JUG, GAS_CYLINDER, EGGS)
+    val initialProducts = listOf(BAGS, WATER_JUG, GAS_CYLINDER, EGGS, SODA)
 
     fun find(productId: String): Product? = initialProducts.firstOrNull { it.id == productId }
 }

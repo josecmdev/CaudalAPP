@@ -296,6 +296,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
                     val restored = withContext(Dispatchers.IO) { CaudalStateWriter.runBlocking { DataBackup.restore(context, uri) } }
                     appState.applyBackup(restored)
                 },
+                onOpenProducts = { appState.destination = HomeDestination.PRODUCTS },
                 onBack = returnToMap,
                 modifier = Modifier.padding(padding),
             )
