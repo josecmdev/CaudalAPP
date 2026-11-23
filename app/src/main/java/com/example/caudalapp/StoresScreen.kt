@@ -324,11 +324,7 @@ private fun StoreAdminDialog(
     )
 }
 
-private fun List<StoreAccountState>.replaceAccount(updated: StoreAccountState): List<StoreAccountState> =
-    mapNotNull { current ->
-        if (current.storeId != updated.storeId) current
-        else updated.takeIf(AccountSettlementPolicy::hasPending)
-    }
+private fun List<StoreAccountState>.replaceAccount(updated: StoreAccountState) = AccountSettlementPolicy.replace(this, updated)
 
 @Composable
 internal fun StoreAccountManagementDialog(

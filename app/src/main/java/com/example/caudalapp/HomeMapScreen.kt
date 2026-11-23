@@ -291,8 +291,7 @@ private fun HomeMapPanel(
     }
 }
 
-private fun List<StoreAccountState>.replaceHomeAccount(updated: StoreAccountState): List<StoreAccountState> =
-    mapNotNull { current -> if (current.storeId != updated.storeId) current else updated.takeIf(AccountSettlementPolicy::hasPending) }
+private fun List<StoreAccountState>.replaceHomeAccount(updated: StoreAccountState) = AccountSettlementPolicy.replace(this, updated)
 
 private fun StoreAccountState?.moneyDue(): Int = this?.let(AccountSettlementPolicy::moneyDue) ?: 0
 private fun StoreAccountState?.unitsPending(): Int = this?.pendingDeliveries?.values?.sum() ?: 0

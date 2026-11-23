@@ -18,6 +18,7 @@ private val CaudalColorScheme = lightColorScheme(
     onSurface = CaudalInk,
     onSurfaceVariant = CaudalMuted,
     error = CaudalError,
+    tertiary = CaudalWarning,
 )
 
 private val CaudalDarkColorScheme = darkColorScheme(
@@ -29,6 +30,7 @@ private val CaudalDarkColorScheme = darkColorScheme(
     onSurface = CaudalSurface,
     onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFC0C8D8),
     error = androidx.compose.ui.graphics.Color(0xFFFFB4AB),
+    tertiary = CaudalWarningDark,
 )
 
 @Composable

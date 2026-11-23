@@ -526,9 +526,10 @@ private fun CompletionDropTransition(trigger: Int) {
         delay(80)
         opacity.animateTo(0f, tween(420, easing = LinearOutSlowInEasing))
     }
+    val waterColor = MaterialTheme.colorScheme.primary
     if (opacity.value > 0f) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val water = Color(0xFF0878E8).copy(alpha = opacity.value)
+            val water = waterColor.copy(alpha = opacity.value)
             val p = progress.value
             val impactY = size.height * .42f
             if (p < .55f) {

@@ -365,8 +365,10 @@ fun MapLibreMapView(
 
     LaunchedEffect(Unit) {
         if (!permissionGranted) {
+            // En Android 13+ sin este permiso no se ve el aviso de "ruta activa" del GPS.
+            val notifications = if (android.os.Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray()
             permissionLauncher.launch(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION) + notifications,
             )
         }
     }

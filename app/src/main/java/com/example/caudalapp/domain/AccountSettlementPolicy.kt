@@ -53,6 +53,10 @@ object AccountSettlementPolicy {
         )
     }
 
+    /** Reemplaza la cuenta de esa tienda; si ya no debe nada, la quita de la lista. */
+    fun replace(accounts: List<StoreAccountState>, updated: StoreAccountState): List<StoreAccountState> =
+        accounts.mapNotNull { current -> if (current.storeId != updated.storeId) current else updated.takeIf(::hasPending) }
+
     fun hasPending(account: StoreAccountState): Boolean =
         moneyDue(account) > 0 || account.pendingDeliveries.values.any { it > 0 } ||
             account.pendingContainers.values.any { it > 0 }

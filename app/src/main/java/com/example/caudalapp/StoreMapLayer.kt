@@ -98,7 +98,7 @@ fun StoreMapLayer(
         if (placementMode) {
             Box(
                 modifier = Modifier.align(Alignment.Center).size(24.dp).shadow(8.dp, CircleShape)
-                    .background(Color(0xFFE64646), CircleShape),
+                    .background(MaterialTheme.colorScheme.error, CircleShape),
             )
         }
 

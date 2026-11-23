@@ -64,7 +64,10 @@ object DiagnosticReporter {
     ) : Thread.UncaughtExceptionHandler {
         override fun uncaughtException(thread: Thread, error: Throwable) {
             runCatching {
-                File(context.filesDir, CRASH_FILE).appendText(
+                val log = File(context.filesDir, CRASH_FILE)
+                // Recorta para que el registro no crezca sin límite en la tablet.
+                if (log.length() > MAX_CRASH_LOG_CHARS * 2L) log.writeText(log.readText().takeLast(MAX_CRASH_LOG_CHARS))
+                log.appendText(
                     buildString {
                         appendLine()
                         appendLine("--- ${Date()} · hilo ${thread.name} ---")

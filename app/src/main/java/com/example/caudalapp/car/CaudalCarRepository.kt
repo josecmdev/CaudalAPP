@@ -120,7 +120,7 @@ class CaudalCarRepository(private val stateFile: File) {
         val due = AccountSettlementPolicy.moneyDue(account)
         if (due <= 0) return@update CarOperationResult.Rejected("Esta tienda no tiene deuda")
         val updated = AccountSettlementPolicy.registerPayment(account, due)
-        state.outstandingAccounts = state.outstandingAccounts.replaceAccount(updated)
+        state.outstandingAccounts = AccountSettlementPolicy.replace(state.outstandingAccounts, updated)
         state.accountAdjustments += StoreAccountAdjustment(
             storeId = storeId,
             type = StoreAccountAdjustmentType.MONEY_PAYMENT,
@@ -161,8 +161,3 @@ private class MutableCarState(restored: CaudalRestoredState) {
         accountAdjustments = accountAdjustments,
     )
 }
-
-private fun List<StoreAccountState>.replaceAccount(updated: StoreAccountState): List<StoreAccountState> =
-    mapNotNull { current ->
-        if (current.storeId != updated.storeId) current else updated.takeIf(AccountSettlementPolicy::hasPending)
-    }

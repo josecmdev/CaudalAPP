@@ -24,7 +24,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -88,7 +87,7 @@ fun RouteCloseDialog(
 
                 if (summary.hasWarnings) {
                     Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Pendientes que continuarán abiertos", color = Color(0xFFC45A00), fontWeight = FontWeight.Bold)
+                        Text("Pendientes que continuarán abiertos", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
                         if (summary.pendingDeliveryUnits > 0) Text("• ${summary.pendingDeliveryUnits} productos por entregar")
                         if (summary.pendingContainers > 0) Text("• ${summary.pendingContainers} envases por recibir")
                         summary.negativeStock.forEach { (name, quantity) -> Text("• $name: $quantity") }
