@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.content.FileProvider
+import androidx.core.content.pm.PackageInfoCompat
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -47,7 +48,7 @@ object DiagnosticReporter {
         return buildString {
             appendLine("CAUDAL APP · REPORTE DE DIAGNÓSTICO")
             appendLine("Generado: ${Date()}")
-            appendLine("Versión: ${packageInfo.versionName} (${packageInfo.longVersionCode})")
+            appendLine("Versión: ${packageInfo.versionName} (${PackageInfoCompat.getLongVersionCode(packageInfo)})")
             appendLine("Dispositivo: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("Android: ${Build.VERSION.RELEASE} · API ${Build.VERSION.SDK_INT}")
             appendLine("Estado local: ${if (state.exists()) "${state.length()} bytes" else "no encontrado"}")
