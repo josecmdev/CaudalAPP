@@ -95,7 +95,6 @@ class CaudalMapController {
     private var onCenterChanged: (GeoPoint) -> Unit = {}
     private var clickListener: MapLibreMap.OnMapClickListener? = null
     private var cameraIdleListener: MapLibreMap.OnCameraIdleListener? = null
-    private val baseMarkers = mutableMapOf<StoreMarkerState, Bitmap>()
     private val storeImageIds = mutableSetOf<String>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val movementMonitor = object : Runnable {
@@ -192,6 +191,7 @@ class CaudalMapController {
     private fun renderStores() {
         val currentContext = context ?: return
         val currentStyle = style ?: return
+        val newImages = HashMap<String, Bitmap>()
         val features = latestStores.map { store ->
             val badge = when {
                 store.moneyDue > 0 -> "Debe Q${store.moneyDue}"
@@ -199,15 +199,19 @@ class CaudalMapController {
                 else -> null
             }
             val imageId = storeCompositeImageId(store, badge)
-            if (currentStyle.getImage(imageId) == null) {
-                val base = baseMarkers.getOrPut(store.state) { loadStoreMarkerBitmap(currentContext, store.state) }
-                currentStyle.addImage(imageId, createStoreCompositeBitmap(base, store, badge))
+            if (imageId !in storeImageIds && imageId !in newImages && currentStyle.getImage(imageId) == null) {
+                newImages[imageId] = StoreMarkerBitmaps.composite(imageId) {
+                    val base = StoreMarkerBitmaps.base(store.state) { loadStoreMarkerBitmap(currentContext, store.state) }
+                    createStoreCompositeBitmap(base, store, badge)
+                }
             }
             Feature.fromGeometry(Point.fromLngLat(store.location.longitude, store.location.latitude)).apply {
                 addStringProperty("storeId", store.id)
                 addStringProperty("iconId", imageId)
             }
         }
+        // Un solo paso al motor nativo en vez de uno por tienda: era lo que trababa al abrir el mapa de la ruta.
+        if (newImages.isNotEmpty()) currentStyle.addImages(newImages)
         val usedIds = features.mapTo(mutableSetOf()) { it.getStringProperty("iconId") }
         val unusedIds = storeImageIds - usedIds
         storeImageIds.clear()
@@ -462,6 +466,18 @@ fun MapLibreMapView(
 }
 
 private class MapViewLifetime(var destroyed: Boolean = false)
+
+/** Los marcadores dibujados sobreviven al mapa: al pasar del mapa de inicio al de la ruta no se vuelven a pintar. */
+private object StoreMarkerBitmaps {
+    private val bases = mutableMapOf<StoreMarkerState, Bitmap>()
+    private val composites = object : android.util.LruCache<String, Bitmap>(32 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+    }
+
+    fun base(state: StoreMarkerState, load: () -> Bitmap): Bitmap = bases.getOrPut(state, load)
+
+    fun composite(id: String, draw: () -> Bitmap): Bitmap = composites.get(id) ?: draw().also { composites.put(id, it) }
+}
 
 private fun StoreMarkerState.markerColor(): Int = when (this) {
     StoreMarkerState.DEBT -> Color.rgb(198, 40, 40)
