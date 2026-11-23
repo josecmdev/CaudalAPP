@@ -30,7 +30,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.example.caudalapp.sync.CaudalSync
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SettingsScreen(
@@ -87,6 +93,7 @@ fun SettingsScreen(
                 onCheckedChange = { onSettingsChanged(settings.copy(hapticFeedback = it)) },
             )
         }
+        if (CaudalSync.configured) SyncSettingsCard()
         SettingsCard("Respaldo de datos", "Para no perder la información si se pierde o se cambia la tablet") {
             Text(
                 "Exporta un archivo con rutas, ventas, cuentas, tiendas, productos y recorridos GPS. " +
@@ -172,6 +179,56 @@ fun SettingsScreen(
             )
             Button(onClick = onExportDiagnostics, modifier = Modifier.fillMaxWidth()) {
                 Text("Compartir reporte de errores (.txt)")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SyncSettingsCard() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var user by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    SettingsCard("Cuenta y sincronización", "Sube ventas, rutas y ubicación a la oficina cuando hay internet") {
+        val email = CaudalSync.signedInEmail
+        if (email == null) {
+            Text(
+                "Sin cuenta la app funciona igual, solo que no envía datos. Pide tu usuario y contraseña al administrador.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(user, { user = it }, label = { Text("Usuario o correo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                password,
+                { password = it },
+                label = { Text("Contraseña") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = {
+                    busy = true
+                    error = null
+                    scope.launch {
+                        error = withContext(Dispatchers.IO) { CaudalSync.signIn(context, user, password) }
+                            .exceptionOrNull()?.let { "No se pudo entrar. Revisa usuario, contraseña e internet." }
+                        if (error == null) password = ""
+                        busy = false
+                    }
+                },
+                enabled = !busy && user.isNotBlank() && password.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Entrar") }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        } else {
+            Text("Conectado como $email", fontWeight = FontWeight.SemiBold)
+            if (CaudalSync.status.isNotBlank()) Text(CaudalSync.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { CaudalSync.syncNow(context) }) { Text("Sincronizar ahora") }
+                OutlinedButton(onClick = { CaudalSync.signOut(context) }) { Text("Cerrar sesión") }
             }
         }
     }

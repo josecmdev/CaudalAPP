@@ -203,6 +203,20 @@ class RouteTrackingService : Service(), LocationListener {
         private const val KEY_LATEST_LOCATION_ROUTE_ID = "latest-location-route-id"
         private const val KEY_LATEST_LATITUDE = "latest-latitude"
         private const val KEY_LATEST_LONGITUDE = "latest-longitude"
+        private const val KEY_LATEST_AT = "latest-at"
+
+        data class KnownLocation(val routeId: String?, val point: GeoPoint, val recordedAtEpochMillis: Long)
+
+        /** Última posición guardada de cualquier ruta, para reportarla a la oficina. */
+        fun latestKnownLocation(context: Context): KnownLocation? {
+            val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            if (!preferences.contains(KEY_LATEST_AT)) return null
+            val point = GeoPoint(
+                Double.fromBits(preferences.getLong(KEY_LATEST_LATITUDE, 0L)),
+                Double.fromBits(preferences.getLong(KEY_LATEST_LONGITUDE, 0L)),
+            ).takeIf(GeoPoint::isValid) ?: return null
+            return KnownLocation(preferences.getString(KEY_LATEST_LOCATION_ROUTE_ID, null), point, preferences.getLong(KEY_LATEST_AT, 0L))
+        }
 
         fun routeId(startedAtEpochMillis: Long): String = startedAtEpochMillis.toString()
 
