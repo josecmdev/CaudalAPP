@@ -34,6 +34,26 @@ class RouteLedgerTest {
     }
 
     @Test
+    fun `vender mas de lo cargado queda en negativo y la recarga lo descuenta`() {
+        val ledger = RouteLedger.start(initialCash = 150, initialStock = mapOf(bolsas to 10))
+
+        ledger.registerStoreSale(
+            storeId = "no-asfaltado",
+            lines = listOf(SaleLine(product = bolsas, requested = 18, delivered = 10, total = 50)),
+            amountReceived = 0,
+        )
+        assertEquals(-8, ledger.displayStock(bolsas.id))
+
+        ledger.restock(mapOf(bolsas to 150))
+        assertEquals(142, ledger.displayStock(bolsas.id))
+
+        ledger.completeDelivery("no-asfaltado", bolsas.id, units = 8, amountReceived = 50)
+        assertEquals(142, ledger.displayStock(bolsas.id))
+        assertEquals(142, ledger.availableStock(bolsas.id))
+        assertEquals(200, ledger.cashOnHand)
+    }
+
+    @Test
     fun `una entrega incompleta se ve negativa hasta completarla`() {
         val ledger = RouteLedger.start(
             initialCash = 0,

@@ -35,6 +35,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,7 +64,8 @@ import com.example.caudalapp.domain.RoutePreparation
 import com.example.caudalapp.domain.RouteStartResult
 
 private val RouteDays = listOf("Martes", "Jueves", "Viernes")
-private val QuickCash = listOf(100, 200, 500)
+private val QuickCash = listOf(100, 150, 200, 300)
+private const val DEFAULT_INITIAL_CASH = "150"
 
 @Composable
 fun RoutePreparationScreen(
@@ -72,8 +75,9 @@ fun RoutePreparationScreen(
     modifier: Modifier = Modifier,
 ) {
     var routeName by rememberSaveable { mutableStateOf("") }
-    var initialCash by rememberSaveable { mutableStateOf("") }
+    var initialCash by rememberSaveable { mutableStateOf(DEFAULT_INITIAL_CASH) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var starting by remember { mutableStateOf(false) }
     val stock = remember(products) { mutableStateMapOf<String, String>().apply { products.forEach { put(it.id, "") } } }
     val focusManager = LocalFocusManager.current
 
@@ -90,8 +94,18 @@ fun RoutePreparationScreen(
         )
         when (result) {
             is RouteStartResult.Started -> onRouteStarted(result.route)
-            is RouteStartResult.Rejected -> errorMessage = result.errors.joinToString("\n") { it.message }
+            is RouteStartResult.Rejected -> {
+                errorMessage = result.errors.joinToString("\n") { it.message }
+                starting = false
+            }
         }
+    }
+    // Crear el mapa de la ruta bloquea un momento: primero se pinta "Iniciando…" para que el toque se sienta al instante.
+    LaunchedEffect(starting) {
+        if (!starting) return@LaunchedEffect
+        withFrameNanos { }
+        withFrameNanos { }
+        startRoute()
     }
 
     // Scaffold padding already covers the nav bar; without consuming it imePadding counts it twice.
@@ -157,7 +171,8 @@ fun RoutePreparationScreen(
             StartRouteBar(
                 summary = summaryText(products.count { (stock[it.id]?.toIntOrNull() ?: 0) > 0 }, products.size, initialCash),
                 errorMessage = errorMessage,
-                onStart = startRoute,
+                starting = starting,
+                onStart = { starting = true },
             )
         }
     }
@@ -268,7 +283,7 @@ private fun TruckLoadCard(
 }
 
 @Composable
-private fun StartRouteBar(summary: String, errorMessage: String?, onStart: () -> Unit) {
+private fun StartRouteBar(summary: String, errorMessage: String?, starting: Boolean, onStart: () -> Unit) {
     Surface(modifier = Modifier.fillMaxWidth(), shadowElevation = 10.dp, color = MaterialTheme.colorScheme.surface) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
@@ -283,9 +298,10 @@ private fun StartRouteBar(summary: String, errorMessage: String?, onStart: () ->
             }
             Button(
                 onClick = onStart,
+                enabled = !starting,
                 shape = RoundedCornerShape(20.dp),
                 contentPadding = PaddingValues(horizontal = 32.dp, vertical = 16.dp),
-            ) { Text("Iniciar ruta", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+            ) { Text(if (starting) "Iniciando…" else "Iniciar ruta", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
         }
     }
 }

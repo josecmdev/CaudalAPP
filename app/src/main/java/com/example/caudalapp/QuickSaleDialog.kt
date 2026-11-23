@@ -172,8 +172,8 @@ fun QuickSaleDialog(
                         cart.filter { it.product.id == selectedProduct.id }.sumOf(QuickSaleLineUi::quantity)
                     if ((quantityText.toIntOrNull() ?: 0) > left) {
                         Text(
-                            "Solo hay ${left.coerceAtLeast(0)} ${selectedProduct.name} en el camión. El inventario quedará en negativo.",
-                            color = MaterialTheme.colorScheme.error,
+                            "Hay ${left.coerceAtLeast(0)} ${selectedProduct.name} en el camión; el inventario quedará en negativo y se descuenta al recargar.",
+                            color = MaterialTheme.colorScheme.tertiary,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }

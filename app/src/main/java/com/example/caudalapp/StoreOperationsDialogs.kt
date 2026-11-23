@@ -250,9 +250,10 @@ fun StoreSaleDialog(
                         Text("Total: Q$invoiceTotal", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         if (hasPotentialPending) {
                             Text(
-                                "Falta inventario: esta factura se cobrará al completar la entrega.",
+                                "Lo que no hay en el camión queda por entregar: el inventario se verá en negativo " +
+                                    "y se descuenta al recargar en sede. Esta factura se cobra al completar la entrega.",
                                 modifier = Modifier.padding(top = 7.dp),
-                                color = MaterialTheme.colorScheme.error,
+                                color = MaterialTheme.colorScheme.tertiary,
                                 fontWeight = FontWeight.SemiBold,
                             )
                         } else {
@@ -458,8 +459,8 @@ fun CompleteDeliveryDialog(route: ActiveRoute, store: Store, onDismiss: () -> Un
                 val inTruck = route.ledger.availableStock(product.id)
                 if ((units.toIntOrNull() ?: 0) > inTruck) {
                     Text(
-                        "Solo hay ${inTruck.coerceAtLeast(0)} ${product.name} en el camión. El inventario quedará en negativo.",
-                        color = MaterialTheme.colorScheme.error,
+                        "Hay ${inTruck.coerceAtLeast(0)} ${product.name} en el camión; el inventario quedará en negativo hasta recargar.",
+                        color = MaterialTheme.colorScheme.tertiary,
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
