@@ -100,7 +100,7 @@ private fun AccountsList(
                 val containers = accounts.sumOf { it.pendingContainers.values.sum() }
                 Text(
                     listOfNotNull(
-                        "${accounts.size} tiendas",
+                        if (accounts.size == 1) "1 tienda" else "${accounts.size} tiendas",
                         "Q${accounts.sumOf(::accountMoney)} por cobrar",
                         deliveries.takeIf { it > 0 }?.let { "$it por entregar" },
                         containers.takeIf { it > 0 }?.let { "$it envases" },

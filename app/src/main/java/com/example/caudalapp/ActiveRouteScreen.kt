@@ -66,6 +66,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -769,11 +770,15 @@ private fun PendingAccountsNotice(count: Int, moneyDue: Int, onOpen: () -> Unit,
                     if (count == 1) "1 tienda con pendientes" else "$count tiendas con pendientes",
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     if (moneyDue > 0) "Q$moneyDue por cobrar · toca para ver" else "Toca para ver",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             IconButton(onClick = onDismiss) {
