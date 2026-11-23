@@ -1,6 +1,9 @@
 package com.example.caudalapp
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -151,9 +154,23 @@ fun StoreSaleDialog(
     var creditEnabled by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val cart = remember { mutableStateListOf<StoreSaleLineUi>() }
-    val focusManager = LocalFocusManager.current
-    val keyboard = LocalSoftwareKeyboardController.current
     var submitted by remember { mutableStateOf(false) }
+    var confirmCancel by remember { mutableStateOf(false) }
+    val requestCancel = { if (cart.isEmpty() && quantityText.isEmpty()) onDismiss() else confirmCancel = true }
+    if (confirmCancel) {
+        AlertDialog(
+            onDismissRequest = { confirmCancel = false },
+            title = { Text("¿Seguro que quieres cancelar?", fontWeight = FontWeight.Bold) },
+            text = { Text("Se pierden los productos agregados a esta venta. No se registra nada.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmCancel = false
+                    onDismiss()
+                }) { Text("Sí, cancelar venta", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { Button(onClick = { confirmCancel = false }, shape = RoundedCornerShape(10.dp)) { Text("Seguir con la venta") } },
+        )
+    }
     val invoiceTotal = cart.sumOf(StoreSaleLineUi::total)
     val hasPotentialPending = cart
         .groupBy { it.product.id }
@@ -162,7 +179,7 @@ fun StoreSaleDialog(
         }
 
     SidePanelDialog(
-        onDismissRequest = {},
+        onDismissRequest = requestCancel,
         title = {
             Column {
                 Text("Nueva venta", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -170,6 +187,9 @@ fun StoreSaleDialog(
             }
         },
         text = {
+            // Deben leerse dentro del Dialog: afuera apuntan a la ventana de la actividad y el teclado no se cerraba.
+            val focusManager = LocalFocusManager.current
+            val keyboard = LocalSoftwareKeyboardController.current
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -272,8 +292,10 @@ fun StoreSaleDialog(
                                 keyboard?.hide()
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Agregar producto") }
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(),
+                    ) { Text("+ Agregar a la factura", fontWeight = FontWeight.SemiBold) }
                 }
                 if (cart.isNotEmpty()) {
                     item {
@@ -398,9 +420,11 @@ fun StoreSaleDialog(
                         }
                     }
                 },
-            ) { Text("Registrar venta") }
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.height(52.dp),
+            ) { Text("Registrar venta", fontWeight = FontWeight.Bold) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClick = requestCancel) { Text("Cancelar") } },
     )
 }
 
