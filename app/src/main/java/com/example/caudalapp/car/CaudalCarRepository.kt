@@ -90,7 +90,7 @@ class CaudalCarRepository(private val stateFile: File) {
             ?: return@update CarOperationResult.Rejected("La cantidad no tiene un precio rápido")
         // Igual que en la tablet: lo que no hay en el camión queda por entregar y el inventario se ve en negativo.
         val delivered = quantity.coerceAtMost(route.ledger.availableStock(ProductCatalog.BAGS.id).coerceAtLeast(0))
-        val received = if (delivered < quantity) 0 else total
+        val received = total
         val product = route.ledger.products().firstOrNull { it.id == ProductCatalog.BAGS.id }
             ?: state.products.get(ProductCatalog.BAGS.id)
             ?: ProductCatalog.BAGS
@@ -101,7 +101,7 @@ class CaudalCarRepository(private val stateFile: File) {
             location = store.location,
         )
         if (delivered < quantity) {
-            CarOperationResult.Success("Venta registrada: ${quantity - delivered} bolsas por entregar · se cobra al completar")
+            CarOperationResult.Success("Venta registrada: Q$total · ${quantity - delivered} bolsas por entregar")
         } else {
             CarOperationResult.Success("Venta registrada: $quantity bolsas · Q$total")
         }
