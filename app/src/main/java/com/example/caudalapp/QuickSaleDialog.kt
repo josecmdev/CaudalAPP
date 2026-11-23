@@ -175,6 +175,15 @@ fun QuickSaleDialog(
                             singleLine = true,
                         )
                     }
+                    val left = route.ledger.availableStock(selectedProduct.id) -
+                        cart.filter { it.product.id == selectedProduct.id }.sumOf(QuickSaleLineUi::quantity)
+                    if ((quantityText.toIntOrNull() ?: 0) > left) {
+                        Text(
+                            "Solo hay ${left.coerceAtLeast(0)} ${selectedProduct.name} en el camión. El inventario quedará en negativo.",
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
                 if (selectedProduct.returnable) {
                     item {

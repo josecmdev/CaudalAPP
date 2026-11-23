@@ -452,6 +452,14 @@ fun CompleteDeliveryDialog(route: ActiveRoute, store: Store, onDismiss: () -> Un
                     "Cantidad entregada",
                     Modifier.fillMaxWidth(),
                 )
+                val inTruck = route.ledger.availableStock(product.id)
+                if ((units.toIntOrNull() ?: 0) > inTruck) {
+                    Text(
+                        "Solo hay ${inTruck.coerceAtLeast(0)} ${product.name} en el camión. El inventario quedará en negativo.",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 WholeNumberField(
                     amount,
                     {

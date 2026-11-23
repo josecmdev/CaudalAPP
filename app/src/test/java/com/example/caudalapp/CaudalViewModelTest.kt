@@ -1,6 +1,7 @@
 package com.example.caudalapp
 
 import java.lang.reflect.Modifier
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -9,6 +10,11 @@ import org.junit.rules.TemporaryFolder
 import com.example.caudalapp.domain.ActiveRoute
 import com.example.caudalapp.domain.ProductCatalog
 import com.example.caudalapp.domain.RouteLedger
+import com.example.caudalapp.domain.AccountSettlementPolicy
+import com.example.caudalapp.domain.Debt
+import com.example.caudalapp.domain.StoreAccountAdjustment
+import com.example.caudalapp.domain.StoreAccountAdjustmentType
+import com.example.caudalapp.domain.StoreAccountState
 
 class CaudalViewModelTest {
     @get:Rule
@@ -42,5 +48,26 @@ class CaudalViewModelTest {
         assertNotNull(restored.activeRoute)
         assertTrue(restored.activeRoute?.name == "Viernes")
         assertTrue(restored.activeRoute?.ledger?.availableStock(ProductCatalog.BAGS.id) == 20)
+    }
+
+    @Test
+    fun `un cobro desde Tiendas con ruta activa queda en las cuentas de la ruta`() {
+        val viewModel = CaudalViewModel()
+        viewModel.outstandingAccounts = listOf(
+            StoreAccountState("tienda", listOf(Debt(200, 200)), emptyMap(), emptyMap(), mapOf("bolsas" to 50)),
+        )
+        val ledger = RouteLedger.start(100, mapOf(ProductCatalog.BAGS to 20))
+        ledger.importAccounts(viewModel.outstandingAccounts)
+        viewModel.activeRoute = ActiveRoute("Viernes", ledger, 1L)
+
+        viewModel.applyAccountChange(
+            emptyList(),
+            StoreAccountAdjustment(storeId = "tienda", type = StoreAccountAdjustmentType.MONEY_PAYMENT, amount = 220),
+        )
+
+        val account = viewModel.currentAccounts.single()
+        assertEquals(30, AccountSettlementPolicy.moneyDue(account))
+        assertEquals(320, ledger.cashOnHand)
+        assertEquals(account, ledger.outstandingAccountStates().single())
     }
 }

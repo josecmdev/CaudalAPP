@@ -104,6 +104,20 @@ class CaudalStateStoreTest {
     }
 
     @Test
+    fun `una ruta con inventario negativo se guarda y se vuelve a abrir`() {
+        val bags = ProductCatalog.BAGS
+        val ledger = RouteLedger.start(initialCash = 0, initialStock = mapOf(bags to 2))
+        ledger.tryRegisterQuickSale(listOf(SaleLine(bags, requested = 5, delivered = 5, total = 25)), amountReceived = 25)
+        val store = CaudalStateStore(temporaryFolder.newFile("negativo.json"))
+
+        store.save(CaudalRestoredState(ActiveRoute("Lunes", ledger, 1L), StoreDirectory(), emptyList()))
+        val restored = store.load()?.activeRoute?.ledger
+
+        assertEquals(-3, restored?.availableStock(bags.id))
+        assertEquals(25, restored?.cashOnHand)
+    }
+
+    @Test
     fun `el archivo local conserva el estado y un archivo corrupto no bloquea el inicio`() {
         val file = temporaryFolder.newFile("caudal-state.json")
         val store = CaudalStateStore(file)

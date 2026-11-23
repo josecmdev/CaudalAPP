@@ -160,6 +160,23 @@ class CaudalViewModel : ViewModel() {
         )
     }
 
+    private var accountsRevision by mutableIntStateOf(0)
+
+    /** Con ruta activa, las cuentas vivas son las de la ruta; las guardadas se reemplazan al cerrarla. */
+    val currentAccounts: List<StoreAccountState>
+        get() {
+            accountsRevision
+            return activeRoute?.ledger?.outstandingAccountStates() ?: outstandingAccounts
+        }
+
+    fun applyAccountChange(updated: List<StoreAccountState>, adjustment: StoreAccountAdjustment) {
+        val route = activeRoute
+        if (route == null) outstandingAccounts = updated else route.ledger.applyAccountAdjustment(adjustment)
+        accountAdjustments += adjustment
+        accountsRevision++
+        persist()
+    }
+
     fun attachSettings(context: android.content.Context) {
         if (settingsStore != null) return
         settingsStore = AppSettingsStore(context)
@@ -256,7 +273,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
         } else if (appState.mapVisible) {
             HomeMapScreen(
                 stores = appState.stores,
-                accounts = appState.outstandingAccounts,
+                accounts = appState.currentAccounts,
                 previousRoutes = appState.completedRoutes,
                 onStartRoute = {
                     appState.destination = HomeDestination.NEW_ROUTE
@@ -266,11 +283,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
                     mapMenuOpen = true
                 },
                 onStateChanged = appState::persist,
-                onAccountsChanged = { updated, adjustment ->
-                    appState.outstandingAccounts = updated
-                    appState.accountAdjustments += adjustment
-                    appState.persist()
-                },
+                onAccountsChanged = appState::applyAccountChange,
                 productName = { id -> appState.products.get(id)?.name ?: id },
                 settings = appState.settings,
                 modifier = Modifier.padding(padding),
@@ -327,7 +340,7 @@ private fun CaudalApp(appState: CaudalViewModel) {
         } else if (appState.destination == HomeDestination.ACCOUNTS) {
             PendingAccountsScreen(
                 stores = appState.stores,
-                accounts = appState.outstandingAccounts,
+                accounts = appState.currentAccounts,
                 productName = { id -> appState.products.get(id)?.name ?: id },
                 onSelectStore = { store ->
                     appState.storeFocusId = store.id
@@ -339,15 +352,11 @@ private fun CaudalApp(appState: CaudalViewModel) {
         } else if (appState.destination == HomeDestination.STORES) {
             StoresScreen(
                 stores = appState.stores,
-                accounts = appState.outstandingAccounts,
+                accounts = appState.currentAccounts,
                 initialFocus = appState.storeFocusId?.let { appState.stores.get(it)?.location },
                 onBack = returnToMap,
                 onStateChanged = appState::persist,
-                onAccountsChanged = { updated, adjustment ->
-                    appState.outstandingAccounts = updated
-                    appState.accountAdjustments += adjustment
-                    appState.persist()
-                },
+                onAccountsChanged = appState::applyAccountChange,
                 productName = { id -> appState.products.get(id)?.name ?: id },
                 modifier = Modifier.padding(padding),
             )

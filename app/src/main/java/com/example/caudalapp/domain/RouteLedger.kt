@@ -227,8 +227,6 @@ class RouteLedger private constructor(
 
     init {
         require(initialCash >= 0) { "El sencillo inicial no puede ser negativo" }
-        require(initialStock.values.all { it >= 0 }) { "El inventario inicial no puede ser negativo" }
-        require(initialEmptyContainers.values.all { it >= 0 }) { "Los envases iniciales no pueden ser negativos" }
     }
 
     fun registerStoreSale(
@@ -414,7 +412,7 @@ class RouteLedger private constructor(
     fun collectDebt(storeId: String, amount: Int) {
         require(amount > 0)
         val account = storeAccount(storeId)
-        require(amount <= account.moneyDue) { "El cobro no puede superar la deuda" }
+        require(amount <= account.moneyDue + account.pendingPayments.values.sum()) { "El cobro no puede superar la deuda" }
 
         var remainingPayment = amount
         account.openDebts.forEach { debt ->
@@ -424,6 +422,12 @@ class RouteLedger private constructor(
             remainingPayment -= applied
         }
         account.openDebts.removeAll { it.remainingAmount == 0 }
+        account.pendingPayments.keys.toList().forEach { productId ->
+            val applied = minOf(account.paymentPending(productId), remainingPayment)
+            remainingPayment -= applied
+            account.pendingPayments[productId] = account.paymentPending(productId) - applied
+        }
+        account.pendingPayments.values.removeAll { it == 0 }
         cashOnHand += amount
         cashCollected += amount
         auditLog += RouteAuditEntry(
@@ -543,6 +547,18 @@ class RouteLedger private constructor(
     fun importAccounts(savedAccounts: List<StoreAccountState>) {
         savedAccounts.forEach { saved ->
             accounts[saved.storeId] = saved.toAccount()
+        }
+    }
+
+    /** Cobros y entregas registrados desde Tiendas o Cuentas pendientes mientras la ruta está activa. */
+    fun applyAccountAdjustment(adjustment: StoreAccountAdjustment) {
+        val productId = adjustment.productId.orEmpty()
+        when (adjustment.type) {
+            StoreAccountAdjustmentType.MONEY_PAYMENT -> collectDebt(adjustment.storeId, adjustment.amount)
+            StoreAccountAdjustmentType.CONTAINER_RETURN ->
+                receiveContainers(adjustment.storeId, productId, adjustment.quantity.coerceAtMost(storeAccount(adjustment.storeId).containersDue(productId)))
+            StoreAccountAdjustmentType.DELIVERY_COMPLETED ->
+                completeDelivery(adjustment.storeId, productId, adjustment.quantity.coerceAtMost(storeAccount(adjustment.storeId).unitsPending(productId)), amountReceived = 0)
         }
     }
 
@@ -687,7 +703,12 @@ class RouteLedger private constructor(
             initialCash: Int,
             initialStock: Map<Product, Int>,
             initialEmptyContainers: Map<String, Int> = emptyMap(),
-        ): RouteLedger = RouteLedger(initialCash, initialStock, initialEmptyContainers)
+        ): RouteLedger {
+            // Solo al iniciar: durante la ruta el inventario puede quedar negativo y debe poder recargarse.
+            require(initialStock.values.all { it >= 0 }) { "El inventario inicial no puede ser negativo" }
+            require(initialEmptyContainers.values.all { it >= 0 }) { "Los envases iniciales no pueden ser negativos" }
+            return RouteLedger(initialCash, initialStock, initialEmptyContainers)
+        }
 
         fun restore(state: RouteLedgerState): RouteLedger {
             val productsById = state.products.associateBy(Product::id)
