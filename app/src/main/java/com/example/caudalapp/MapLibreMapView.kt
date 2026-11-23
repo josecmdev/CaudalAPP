@@ -232,7 +232,7 @@ class CaudalMapController {
         )
         currentStyle.addLayer(
             CircleLayer(STORE_CLUSTER_LAYER_ID, STORE_SOURCE_ID).withProperties(
-                circleColor("#0878E8"),
+                circleColor("#1A1D21"),
                 circleRadius(22f),
                 circleStrokeColor("#FFFFFF"),
                 circleStrokeWidth(3f),
@@ -522,18 +522,24 @@ private fun createStoreCompositeBitmap(
     val height = if (badge == null) 154 else 180
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
-    val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    // Etiqueta oscura con borde blanco: se lee igual sobre calles claras, parques o mapa 3D, sin sombras.
+    val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(26, 29, 33) }
+    val labelBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        setShadowLayer(5f, 0f, 2f, Color.argb(70, 0, 0, 0))
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
     }
     val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(23, 50, 77)
-        textSize = 27f
+        color = Color.WHITE
+        textSize = 25f
         textAlign = Paint.Align.CENTER
         typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
     }
-    val displayName = ellipsizeForPaint(store.name, textPaint, width - 30f)
-    canvas.drawRoundRect(8f, 5f, width - 8f, 48f, 18f, 18f, labelPaint)
+    val displayName = ellipsizeForPaint(store.name, textPaint, width - 44f)
+    val labelWidth = (textPaint.measureText(displayName) + 30f).coerceAtMost(width - 8f)
+    val labelLeft = (width - labelWidth) / 2f
+    canvas.drawRoundRect(labelLeft, 6f, labelLeft + labelWidth, 46f, 10f, 10f, labelPaint)
+    canvas.drawRoundRect(labelLeft, 6f, labelLeft + labelWidth, 46f, 10f, 10f, labelBorder)
     canvas.drawText(displayName, width / 2f, 35f, textPaint)
 
     val markerTop = if (badge == null) 53 else 76
@@ -541,15 +547,15 @@ private fun createStoreCompositeBitmap(
     canvas.drawBitmap(marker, null, android.graphics.Rect(markerLeft, markerTop, markerLeft + 84, markerTop + 96), null)
 
     if (badge != null) {
-        val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(183, 28, 28) }
+        val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (store.moneyDue > 0) Color.rgb(180, 35, 24) else Color.rgb(167, 90, 0) }
         val badgeText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             textSize = 22f
             textAlign = Paint.Align.CENTER
             typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
         }
-        canvas.drawRoundRect(44f, 52f, width - 44f, 82f, 15f, 15f, badgePaint)
-        canvas.drawText(ellipsizeForPaint(badge, badgeText, width - 100f), width / 2f, 75f, badgeText)
+        canvas.drawRoundRect(52f, 52f, width - 52f, 80f, 8f, 8f, badgePaint)
+        canvas.drawText(ellipsizeForPaint(badge, badgeText, width - 116f), width / 2f, 74f, badgeText)
     }
     return bitmap
 }
