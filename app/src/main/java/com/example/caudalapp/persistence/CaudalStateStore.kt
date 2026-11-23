@@ -239,7 +239,11 @@ class CaudalStateStore(
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val directory: File get() = stateFile.absoluteFile.parentFile
-    private val temporaryFile: File get() = File(directory, "${stateFile.name}.tmp")
+    /** El historial va aparte: casi nunca cambia y es lo que más pesa, así cada venta escribe un archivo chico. */
+    private val historyFile: File get() = File(directory, "${stateFile.nameWithoutExtension}-history.json")
+
+    /** Lo que hay en [historyFile] según este guardador; null si no lo sabe. */
+    private var savedHistory: List<CompletedRouteRecord>? = null
 
     /** Archivo ilegible que la última llamada a [load] apartó, o null si no apartó ninguno. */
     var lastSetAsideFile: File? = null
@@ -247,26 +251,47 @@ class CaudalStateStore(
 
     fun load(): CaudalRestoredState? {
         lastSetAsideFile = null
-        recoverInterruptedFallbackSave()
+        recoverInterruptedFallbackSave(stateFile)
+        recoverInterruptedFallbackSave(historyFile)
         if (!stateFile.exists()) return null
-        return runCatching { CaudalStateCodec.decode(stateFile.readText(Charsets.UTF_8)) }
+        val state = runCatching { CaudalStateCodec.decode(stateFile.readText(Charsets.UTF_8)) }
             .getOrElse {
-                lastSetAsideFile = setAsideUnreadableFile()
-                null
+                lastSetAsideFile = setAsideUnreadableFile(stateFile)
+                return null
             }
+        // Sin archivo de historial es el formato anterior: el historial viene dentro del principal.
+        if (!historyFile.exists()) return state
+        val history = runCatching { CaudalStateCodec.decode(historyFile.readText(Charsets.UTF_8)).completedRoutes }
+            .getOrElse {
+                lastSetAsideFile = setAsideUnreadableFile(historyFile)
+                return state
+            }
+        savedHistory = history
+        return state.copy(completedRoutes = history)
     }
 
     fun save(state: CaudalRestoredState) {
         directory.mkdirs()
-        val temporary = temporaryFile
+        val history = state.completedRoutes
+        val historyChanged = if (historyFile.exists()) history != savedHistory else history.isNotEmpty()
+        // Primero el historial: si se corta en medio, queda historial nuevo con principal viejo, sin perder rutas.
+        if (historyChanged) {
+            writeSafely(historyFile, CaudalStateCodec.encode(CaudalRestoredState(null, StoreDirectory(), history)))
+            savedHistory = history
+        }
+        writeSafely(stateFile, CaudalStateCodec.encode(state.copy(completedRoutes = emptyList())))
+    }
+
+    private fun writeSafely(target: File, text: String) {
+        val temporary = File(directory, "${target.name}.tmp")
         FileOutputStream(temporary).use { output ->
-            output.write(CaudalStateCodec.encode(state).toByteArray(Charsets.UTF_8))
+            output.write(text.toByteArray(Charsets.UTF_8))
             output.flush()
             output.fd.sync()
         }
         // En Android y en la JVM sobre Linux, renameTo es rename(2): atómico y reemplaza el destino.
-        if (temporary.renameTo(stateFile)) return
-        replaceWithoutAtomicRename(temporary)
+        if (temporary.renameTo(target)) return
+        replaceWithoutAtomicRename(target, temporary)
     }
 
     /**
@@ -274,32 +299,32 @@ class CaudalStateStore(
      * al correr pruebas). Mueve el archivo anterior a `.previous` antes de colocar el nuevo, de
      * modo que en ningún momento se pierden ambos.
      */
-    private fun replaceWithoutAtomicRename(temporary: File) {
-        val previous = File(directory, "${stateFile.name}.previous")
+    private fun replaceWithoutAtomicRename(target: File, temporary: File) {
+        val previous = File(directory, "${target.name}.previous")
         previous.delete()
-        if (stateFile.exists() && !stateFile.renameTo(previous)) {
-            throw IOException("No se pudo reemplazar ${stateFile.name}")
+        if (target.exists() && !target.renameTo(previous)) {
+            throw IOException("No se pudo reemplazar ${target.name}")
         }
-        if (!temporary.renameTo(stateFile)) {
-            previous.renameTo(stateFile)
-            throw IOException("No se pudo guardar ${stateFile.name}")
+        if (!temporary.renameTo(target)) {
+            previous.renameTo(target)
+            throw IOException("No se pudo guardar ${target.name}")
         }
         previous.delete()
     }
 
     /** Si un guardado de respaldo se interrumpió entre sus dos renames, restaura el archivo anterior. */
-    private fun recoverInterruptedFallbackSave() {
-        val previous = File(directory, "${stateFile.name}.previous")
-        if (!stateFile.exists() && previous.exists()) previous.renameTo(stateFile)
+    private fun recoverInterruptedFallbackSave(file: File) {
+        val previous = File(directory, "${file.name}.previous")
+        if (!file.exists() && previous.exists()) previous.renameTo(file)
     }
 
-    private fun setAsideUnreadableFile(): File? {
-        val target = File(directory, "${stateFile.name}.unreadable-${clock()}")
-        if (stateFile.renameTo(target)) return target
+    private fun setAsideUnreadableFile(file: File): File? {
+        val target = File(directory, "${file.name}.unreadable-${clock()}")
+        if (file.renameTo(target)) return target
         // Si no se puede mover, se copia; si tampoco, se deja el original intacto y se avisa.
         return runCatching {
-            stateFile.copyTo(target, overwrite = false)
-            stateFile.delete()
+            file.copyTo(target, overwrite = false)
+            file.delete()
             target
         }.getOrNull()
     }

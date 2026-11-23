@@ -7,6 +7,8 @@ import androidx.core.content.FileProvider
 import com.example.caudalapp.persistence.CaudalBackupArchive
 import com.example.caudalapp.persistence.CaudalBackupRestorer
 import com.example.caudalapp.persistence.CaudalRestoredState
+import com.example.caudalapp.persistence.CaudalStateCodec
+import com.example.caudalapp.persistence.CaudalStateStore
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -29,10 +31,13 @@ object DataBackup {
         val versionName = runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
         }.getOrNull().orEmpty()
+        // El respaldo lleva todo en un solo archivo, aunque en la tablet el historial se guarde aparte.
+        val saved = requireNotNull(CaudalStateStore(File(context.filesDir, STATE_FILE)).load()) { "No hay datos guardados para respaldar" }
+        val fullState = File(directory, STATE_FILE).apply { writeText(CaudalStateCodec.encode(saved), Charsets.UTF_8) }
         backup.outputStream().use { output ->
             CaudalBackupArchive.write(
                 output = output,
-                stateFile = File(context.filesDir, STATE_FILE),
+                stateFile = fullState,
                 tracksDirectory = File(context.filesDir, TRACK_DIRECTORY),
                 createdAtEpochMillis = System.currentTimeMillis(),
                 appVersion = versionName,

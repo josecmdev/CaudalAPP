@@ -167,7 +167,8 @@ class CaudalBackupRestorer(
     fun restore(input: InputStream): CaudalRestoredState {
         try {
             val staged = CaudalBackupArchive.stage(input, stagingDirectory)
-            if (stateFile.exists()) stateFile.copyTo(previousStateCopy, overwrite = true)
+            // Estado completo (con el historial, que vive en otro archivo) para poder deshacer a mano.
+            CaudalStateStore(stateFile).load()?.let { previousStateCopy.writeText(CaudalStateCodec.encode(it), Charsets.UTF_8) }
             tracksDirectory.mkdirs()
             staged.trackFiles.forEach { track ->
                 track.copyTo(File(tracksDirectory, track.name), overwrite = true)

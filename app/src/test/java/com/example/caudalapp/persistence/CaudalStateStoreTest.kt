@@ -232,6 +232,52 @@ class CaudalStateStoreTest {
         assertTrue(file.exists())
     }
 
+    @Test
+    fun `el historial se guarda aparte y el archivo principal queda chico`() {
+        val folder = temporaryFolder.newFolder("split")
+        val file = File(folder, "caudal-state-v1.json")
+        val store = CaudalStateStore(file)
+        val state = namedState("Lupita").copy(completedRoutes = listOf(route("Lunes")))
+
+        store.save(state)
+
+        assertTrue(File(folder, "caudal-state-v1-history.json").exists())
+        assertTrue(CaudalStateCodec.decode(file.readText()).completedRoutes.isEmpty())
+        assertEquals("Lunes", CaudalStateStore(file).load()?.completedRoutes?.single()?.routeName)
+    }
+
+    @Test
+    fun `un archivo del formato anterior conserva su historial y se migra al guardar`() {
+        val folder = temporaryFolder.newFolder("legacy")
+        val file = File(folder, "caudal-state-v1.json")
+        file.writeText(CaudalStateCodec.encode(namedState("Lupita").copy(completedRoutes = listOf(route("Martes")))))
+        val store = CaudalStateStore(file)
+
+        val loaded = requireNotNull(store.load())
+        store.save(loaded)
+
+        assertEquals("Martes", loaded.completedRoutes.single().routeName)
+        assertEquals("Martes", CaudalStateStore(file).load()?.completedRoutes?.single()?.routeName)
+        assertTrue(CaudalStateCodec.decode(file.readText()).completedRoutes.isEmpty())
+    }
+
+    @Test
+    fun `restaurar un estado sin historial borra el historial anterior`() {
+        val file = File(temporaryFolder.newFolder("restore"), "caudal-state-v1.json")
+        CaudalStateStore(file).save(namedState("Lupita").copy(completedRoutes = listOf(route("Lunes"))))
+
+        CaudalStateStore(file).save(namedState("Lupita"))
+
+        assertTrue(CaudalStateStore(file).load()?.completedRoutes?.isEmpty() == true)
+    }
+
+    private fun route(name: String) = CompletedRouteRecord(
+        name,
+        1L,
+        2L,
+        RouteLedger.start(0, emptyMap()).closeSummary(),
+    )
+
     private fun namedState(storeName: String): CaudalRestoredState {
         val stores = StoreDirectory { "store-1" }
         stores.addStore(storeName, GeoPoint(14.6, -90.5))
