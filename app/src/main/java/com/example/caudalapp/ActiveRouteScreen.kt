@@ -16,6 +16,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -458,7 +462,8 @@ fun ActiveRouteScreen(
                     onToggle = { panelExpanded = !panelExpanded },
                     onAccountsClick = { accountsOpen = true },
                     onAuditClick = { auditOpen = true },
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                    modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 620.dp).fillMaxWidth()
+                        .heightIn(max = if (panelExpanded) 460.dp else 72.dp),
                 )
             }
         }
@@ -634,7 +639,8 @@ private fun RouteSummaryPanel(
     ) {
         if (!expanded) {
             Box(
-                modifier = Modifier.fillMaxSize().clickable(onClick = onToggle).padding(6.dp),
+                // En vertical la tarjeta no tiene alto fijo: fillMaxSize la estiraba a toda la pantalla aun cerrada.
+                modifier = (if (landscape) Modifier.fillMaxSize() else Modifier.fillMaxWidth()).clickable(onClick = onToggle).padding(6.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 if (landscape) {
@@ -660,7 +666,10 @@ private fun RouteSummaryPanel(
                 }
             }
         } else {
-            Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(route.name, fontWeight = FontWeight.Bold)
