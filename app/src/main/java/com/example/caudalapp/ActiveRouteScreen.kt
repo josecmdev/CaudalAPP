@@ -414,11 +414,7 @@ fun ActiveRouteScreen(
                 }
             }
             Box(modifier = Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                AnimatedVisibility(
-                    visible = pendingNoticeVisible,
-                    enter = fadeIn() + slideInVertically { -it },
-                    exit = fadeOut() + slideOutVertically { -it },
-                ) {
+                TopNoticeVisibility(visible = pendingNoticeVisible) {
                     val pendingAccounts = remember(ledgerRevision) { route.ledger.outstandingAccountStates().filter(AccountSettlementPolicy::hasPending) }
                     PendingAccountsNotice(
                         count = pendingAccounts.size,
@@ -737,6 +733,16 @@ private fun PanelActionButton(
             }
         }
     }
+}
+
+// Fuera del Row: dentro, AnimatedVisibility toma la versión de RowScope y no compila.
+@Composable
+private fun TopNoticeVisibility(visible: Boolean, content: @Composable () -> Unit) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn() + slideInVertically { -it },
+        exit = fadeOut() + slideOutVertically { -it },
+    ) { content() }
 }
 
 @Composable
