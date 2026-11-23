@@ -336,6 +336,7 @@ fun MapLibreMapView(
     onLocationPermissionGranted: () -> Unit = {},
     automaticFollow: Boolean = true,
     gpsIntervalSeconds: Int = 1,
+    shareRouteGps: Boolean = false,
     mapStyle: AppMapStyle = AppMapStyle.LIBERTY,
     modifier: Modifier = Modifier,
 ) {
@@ -438,7 +439,7 @@ fun MapLibreMapView(
                         if (lifetime.destroyed || controller.map !== map) return@setStyle
                         controller.onStyleLoaded(style)
                         if (permissionGranted) {
-                            safelyEnableCaudalLocation(context, map, style, controller, gpsIntervalSeconds)
+                            safelyEnableCaudalLocation(context, map, style, controller, gpsIntervalSeconds, shareRouteGps)
                         }
                     }
                 }
@@ -454,7 +455,7 @@ fun MapLibreMapView(
         val map = mapReady ?: return@LaunchedEffect
         if (permissionGranted && !lifetime.destroyed && controller.map === map) {
             map.style?.let {
-                safelyEnableCaudalLocation(context, map, it, controller, gpsIntervalSeconds)
+                safelyEnableCaudalLocation(context, map, it, controller, gpsIntervalSeconds, shareRouteGps)
             }
         }
     }
@@ -580,12 +581,15 @@ private fun enableCaudalLocation(
     map: MapLibreMap,
     style: org.maplibre.android.maps.Style,
     intervalMillis: Long,
+    shareRouteGps: Boolean,
 ) {
     val location = map.locationComponent
     if (!location.isLocationComponentActivated) {
         val request = LocationEngineRequest.Builder(intervalMillis)
             .setFastestInterval(intervalMillis)
-            .setPriority(LocationEngineRequest.PRIORITY_HIGH_ACCURACY)
+            // Con ruta activa el servicio ya enciende el GPS: el mapa solo escucha esas lecturas (proveedor pasivo)
+            // en vez de pedir un segundo GPS que gasta batería.
+            .setPriority(if (shareRouteGps) LocationEngineRequest.PRIORITY_NO_POWER else LocationEngineRequest.PRIORITY_HIGH_ACCURACY)
             .build()
         location.activateLocationComponent(
             LocationComponentActivationOptions.builder(context, style)
@@ -605,9 +609,10 @@ private fun safelyEnableCaudalLocation(
     style: org.maplibre.android.maps.Style,
     controller: CaudalMapController,
     gpsIntervalSeconds: Int,
+    shareRouteGps: Boolean,
 ) {
     try {
-        enableCaudalLocation(context, map, style, gpsIntervalSeconds.coerceIn(1, 10) * 1_000L)
+        enableCaudalLocation(context, map, style, gpsIntervalSeconds.coerceIn(1, 10) * 1_000L, shareRouteGps)
         controller.restoreCameraMode()
     } catch (error: Throwable) {
         // MapLibre executes this callback from JNI. Letting a Java exception escape here

@@ -5,16 +5,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -34,7 +31,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import com.example.caudalapp.domain.ActiveRoute
 import com.example.caudalapp.domain.Product
 import com.example.caudalapp.domain.SaleLine
@@ -72,15 +68,8 @@ fun QuickSaleDialog(
     var submitted by remember { mutableStateOf(false) }
     val cartTotal = cart.sumOf(QuickSaleLineUi::total)
 
-    AlertDialog(
+    SidePanelDialog(
         onDismissRequest = {},
-        properties = DialogProperties(
-            dismissOnBackPress = false,
-            dismissOnClickOutside = false,
-            usePlatformDefaultWidth = false,
-        ),
-        modifier = Modifier.fillMaxWidth(.92f).widthIn(max = 760.dp),
-        shape = RoundedCornerShape(26.dp),
         title = {
             Column {
                 Text("Venta rápida", fontWeight = FontWeight.Bold)
@@ -89,7 +78,7 @@ fun QuickSaleDialog(
         },
         text = {
             LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
+                modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {

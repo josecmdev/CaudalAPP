@@ -378,6 +378,7 @@ fun ActiveRouteScreen(
             onLocationPermissionGranted = onLocationPermissionGranted,
             automaticFollow = settings.automaticMapFollow,
             gpsIntervalSeconds = settings.gpsIntervalSeconds,
+            shareRouteGps = true,
             mapStyle = settings.mapStyle,
             modifier = Modifier.fillMaxSize(),
         )

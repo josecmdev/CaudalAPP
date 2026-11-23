@@ -61,6 +61,7 @@ fun StoreMapLayer(
     onLocationPermissionGranted: () -> Unit = {},
     automaticFollow: Boolean = true,
     gpsIntervalSeconds: Int = 1,
+    shareRouteGps: Boolean = false,
     mapStyle: AppMapStyle = AppMapStyle.LIBERTY,
     modifier: Modifier = Modifier,
 ) {
@@ -91,6 +92,7 @@ fun StoreMapLayer(
             onLocationPermissionGranted = onLocationPermissionGranted,
             automaticFollow = automaticFollow,
             gpsIntervalSeconds = gpsIntervalSeconds,
+            shareRouteGps = shareRouteGps,
             mapStyle = mapStyle,
             modifier = Modifier.fillMaxSize(),
         )

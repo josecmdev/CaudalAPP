@@ -5,13 +5,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.AlertDialog
@@ -131,15 +129,12 @@ fun StoreSaleDialog(
             lines.sumOf(StoreSaleLineUi::requested) > route.ledger.availableStock(productId).coerceAtLeast(0)
         }
 
-    AlertDialog(
+    SidePanelDialog(
         onDismissRequest = {},
-        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false, usePlatformDefaultWidth = false),
-        modifier = Modifier.fillMaxWidth(.92f).widthIn(max = 760.dp),
-        shape = RoundedCornerShape(26.dp),
         title = { Text("Venta · ${store.name}", fontWeight = FontWeight.Bold) },
         text = {
             LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 540.dp),
+                modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
