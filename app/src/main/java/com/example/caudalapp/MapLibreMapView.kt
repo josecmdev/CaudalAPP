@@ -33,12 +33,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.example.caudalapp.domain.GeoPoint
 import com.example.caudalapp.domain.StoreMarkerState
 import com.example.caudalapp.domain.AdaptiveGpsPolicy
+import com.example.caudalapp.domain.LiveRouteTrail
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.location.LocationComponentActivationOptions
+import org.maplibre.android.location.LocationComponentOptions
 import org.maplibre.android.location.engine.LocationEngineRequest
 import org.maplibre.android.location.modes.CameraMode
 import org.maplibre.android.location.modes.RenderMode
@@ -47,12 +49,19 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.layers.PropertyFactory.circleColor
 import org.maplibre.android.style.layers.PropertyFactory.circleRadius
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
 import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
+import org.maplibre.android.style.layers.PropertyFactory.lineCap
+import org.maplibre.android.style.layers.PropertyFactory.lineColor
+import org.maplibre.android.style.layers.PropertyFactory.lineJoin
+import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
+import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.layers.PropertyFactory.iconImage
 import org.maplibre.android.style.layers.PropertyFactory.iconOffset
 import org.maplibre.android.style.layers.PropertyFactory.iconSize
@@ -63,6 +72,7 @@ import org.maplibre.android.style.sources.GeoJsonOptions
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
 private const val CAUDAL_NAVIGATION_ZOOM = 16.2
@@ -71,6 +81,11 @@ private const val STORE_SOURCE_ID = "caudal-store-source"
 private const val STORE_LAYER_ID = "caudal-store-layer"
 private const val STORE_CLUSTER_LAYER_ID = "caudal-store-clusters"
 private const val STORE_CLUSTER_COUNT_LAYER_ID = "caudal-store-cluster-count"
+private const val TRAIL_SOURCE_ID = "caudal-live-trail-source"
+private const val TRAIL_LAYER_ID = "caudal-live-trail-layer"
+
+// shortcut: el rastro vive en memoria; si Android cierra la app se pierde lo dibujado (el recorrido guardado no). Cargar RouteTrackStore al abrir si molesta.
+private val liveTrail = LiveRouteTrail()
 
 data class MapStorePoint(
     val id: String,
@@ -100,6 +115,7 @@ class CaudalMapController {
     private val movementMonitor = object : Runnable {
         override fun run() {
             if (automaticFollow && !placementMode) updateMovementAwareTracking()
+            recordTrailPoint()
             mainHandler.postDelayed(this, MOVEMENT_CHECK_INTERVAL_MILLIS)
         }
     }
@@ -162,6 +178,7 @@ class CaudalMapController {
     internal fun onStyleLoaded(style: Style) {
         this.style = style
         storeImageIds.clear()
+        renderTrail()
         renderStores()
         pendingFocus?.let(::focusOn)
     }
@@ -180,12 +197,44 @@ class CaudalMapController {
 
     fun setAutomaticFollow(enabled: Boolean) {
         automaticFollow = enabled
-        mainHandler.removeCallbacks(movementMonitor)
-        if (enabled) mainHandler.post(movementMonitor)
+    }
+
+    /** La clave identifica la ruta activa; null = sin ruta, no se dibuja rastro. */
+    fun setTrailKey(key: Long?) {
+        if (key != liveTrail.key) liveTrail.reset(key)
+        renderTrail()
+    }
+
+    private fun recordTrailPoint() {
+        val location = map?.locationComponent?.takeIf { it.isLocationComponentActivated }?.lastKnownLocation ?: return
+        if (liveTrail.add(GeoPoint(location.latitude, location.longitude), android.os.SystemClock.uptimeMillis())) renderTrail()
+    }
+
+    private fun renderTrail() {
+        val currentStyle = style ?: return
+        val points = liveTrail.snapshot.map { Point.fromLngLat(it.longitude, it.latitude) }
+        val data = if (points.size >= 2) FeatureCollection.fromFeature(Feature.fromGeometry(LineString.fromLngLats(points)))
+        else FeatureCollection.fromFeatures(emptyList())
+        val source = currentStyle.getSourceAs<GeoJsonSource>(TRAIL_SOURCE_ID)
+        if (source != null) {
+            source.setGeoJson(data)
+            return
+        }
+        currentStyle.addSource(GeoJsonSource(TRAIL_SOURCE_ID, data))
+        // Debajo de las tiendas para no tapar sus globos.
+        val trail = LineLayer(TRAIL_LAYER_ID, TRAIL_SOURCE_ID).withProperties(
+            lineColor("#2E7DD7"),
+            lineWidth(6f),
+            lineOpacity(.6f),
+            lineCap(Property.LINE_CAP_ROUND),
+            lineJoin(Property.LINE_JOIN_ROUND),
+        )
+        if (currentStyle.getLayer(STORE_CLUSTER_LAYER_ID) != null) currentStyle.addLayerBelow(trail, STORE_CLUSTER_LAYER_ID)
+        else currentStyle.addLayer(trail)
     }
 
     fun setMapStyle(mapStyle: AppMapStyle) {
-        navigationTilt = if (mapStyle == AppMapStyle.THREE_D) 52.0 else 24.0
+        navigationTilt = if (mapStyle == AppMapStyle.THREE_D) 52.0 else 40.0
     }
 
     private fun renderStores() {
@@ -342,6 +391,7 @@ fun MapLibreMapView(
     gpsIntervalSeconds: Int = 1,
     shareRouteGps: Boolean = false,
     mapStyle: AppMapStyle = AppMapStyle.LIBERTY,
+    trailKey: Long? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -366,6 +416,9 @@ fun MapLibreMapView(
     }
     LaunchedEffect(mapStyle) {
         controller.setMapStyle(mapStyle)
+    }
+    LaunchedEffect(trailKey) {
+        controller.setTrailKey(trailKey)
     }
 
     LaunchedEffect(Unit) {
@@ -421,7 +474,7 @@ fun MapLibreMapView(
                     map.cameraPosition = CameraPosition.Builder()
                         .target(LatLng(initialCenter.latitude, initialCenter.longitude))
                         .zoom(CAUDAL_NAVIGATION_ZOOM)
-                        .tilt(if (mapStyle == AppMapStyle.THREE_D) 52.0 else 24.0)
+                        .tilt(if (mapStyle == AppMapStyle.THREE_D) 52.0 else 40.0)
                         .build()
                     map.setMinZoomPreference(9.0)
                     map.setMaxZoomPreference(19.0)
@@ -617,6 +670,18 @@ private fun enableCaudalLocation(
             LocationComponentActivationOptions.builder(context, style)
                 .useDefaultLocationEngine(true)
                 .locationEngineRequest(request)
+                .locationComponentOptions(
+                    LocationComponentOptions.builder(context)
+                        .gpsDrawable(R.drawable.ic_caudal_truck)
+                        .foregroundDrawable(R.drawable.ic_caudal_truck)
+                        .foregroundDrawableStale(R.drawable.ic_caudal_truck)
+                        // Sin tinte: si no, MapLibre pinta el camión de un solo color.
+                        .foregroundTintColor(null)
+                        .bearingDrawable(R.drawable.ic_caudal_truck)
+                        .accuracyAlpha(.12f)
+                        .elevation(0f)
+                        .build(),
+                )
                 .build(),
         )
     }

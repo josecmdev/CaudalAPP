@@ -6,6 +6,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.draw.scale
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.BorderStroke
@@ -413,6 +420,7 @@ fun ActiveRouteScreen(
             gpsIntervalSeconds = settings.gpsIntervalSeconds,
             shareRouteGps = true,
             mapStyle = settings.mapStyle,
+            trailKey = route.startedAtEpochMillis,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -451,10 +459,13 @@ fun ActiveRouteScreen(
             }
         }
 
+        // Fuera del key(): si no, el panel se recrea en cada venta y el número no tiene de dónde animar.
+        val shownCash by animateIntAsState(route.ledger.cashOnHand, tween(600), label = "cashOnHand")
         if (!placingStore && landscape) {
             key(ledgerRevision) {
                 RouteSummaryPanel(
                     route = route,
+                    cashOnHand = shownCash,
                     landscape = true,
                     expanded = panelExpanded,
                     onToggle = { panelExpanded = !panelExpanded },
@@ -471,6 +482,7 @@ fun ActiveRouteScreen(
             key(ledgerRevision) {
                 RouteSummaryPanel(
                     route = route,
+                    cashOnHand = shownCash,
                     landscape = false,
                     expanded = panelExpanded,
                     onToggle = { panelExpanded = !panelExpanded },
@@ -570,19 +582,38 @@ fun ActiveRouteScreen(
             }
         }
 
-        feedback?.let { message ->
+        // Guarda el último mensaje para que la salida animada no se quede sin texto.
+        var lastFeedback by remember { mutableStateOf("") }
+        feedback?.let { lastFeedback = it }
+        AnimatedVisibility(
+            visible = feedback != null,
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 88.dp),
+            enter = fadeIn(tween(150)) + slideInVertically(tween(220)) { -it / 2 },
+            exit = fadeOut(tween(250)),
+        ) {
             Surface(
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 88.dp),
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.primary,
                 shadowElevation = 8.dp,
             ) {
-                Text(
-                    message,
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    fontWeight = FontWeight.Bold,
-                )
+                Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val checkScale by transition.animateFloat(
+                        transitionSpec = { spring(dampingRatio = Spring.DampingRatioMediumBouncy) },
+                        label = "checkScale",
+                    ) { if (it == androidx.compose.animation.EnterExitState.Visible) 1f else .3f }
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.scale(checkScale),
+                    )
+                    Text(
+                        lastFeedback,
+                        modifier = Modifier.padding(start = 8.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
     }
@@ -625,6 +656,7 @@ private fun RouteActionButton(icon: androidx.compose.ui.graphics.vector.ImageVec
 @Composable
 private fun RouteSummaryPanel(
     route: ActiveRoute,
+    cashOnHand: Int,
     landscape: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
@@ -671,7 +703,7 @@ private fun RouteSummaryPanel(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                        Text("Q$cashOnHand", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
                         Text(
                             route.ledger.products().filterNot { it.archived }
                                 .joinToString("  ·  ") { "${it.name} ${route.ledger.displayStock(it.id)}" },
@@ -702,7 +734,7 @@ private fun RouteSummaryPanel(
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Efectivo esperado", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                    Text("Q$cashOnHand", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Text("En el camión", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)

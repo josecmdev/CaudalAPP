@@ -68,6 +68,7 @@ fun StoreMapLayer(
     gpsIntervalSeconds: Int = 1,
     shareRouteGps: Boolean = false,
     mapStyle: AppMapStyle = AppMapStyle.LIBERTY,
+    trailKey: Long? = null,
     modifier: Modifier = Modifier,
 ) {
     val mapController = remember { CaudalMapController() }
@@ -99,6 +100,7 @@ fun StoreMapLayer(
             gpsIntervalSeconds = gpsIntervalSeconds,
             shareRouteGps = shareRouteGps,
             mapStyle = mapStyle,
+            trailKey = trailKey,
             modifier = Modifier.fillMaxSize(),
         )
 
