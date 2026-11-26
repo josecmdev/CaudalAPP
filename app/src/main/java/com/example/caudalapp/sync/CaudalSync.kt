@@ -1,6 +1,11 @@
 package com.example.caudalapp.sync
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationManager
+import androidx.core.content.ContextCompat
 import android.os.Build
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -10,10 +15,20 @@ import com.example.caudalapp.DataBackup
 import com.example.caudalapp.RouteTrackingService
 import com.example.caudalapp.persistence.CaudalStateStore
 import com.example.caudalapp.persistence.CaudalStateWriter
+import com.example.caudalapp.domain.GeoPoint
+import com.example.caudalapp.domain.Store
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.io.File
-import java.security.MessageDigest
+import java.net.URLEncoder
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -37,29 +52,45 @@ object CaudalSync {
         Thread(task, "caudal-sync").apply { isDaemon = true }
     }
     private var started = false
+    private var startedContext: Context? = null
     private val api by lazy { SupabaseApi(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY) }
 
     fun start(context: Context) {
         if (started || !configured) return
         started = true
         val appContext = context.applicationContext
+        startedContext = appContext
         signedInEmail = loadSession(appContext)?.email
         executor.scheduleWithFixedDelay({ runCatching { syncOnce(appContext) } }, 5, INTERVAL_SECONDS, TimeUnit.SECONDS)
     }
 
     /** Usuario sin @ se toma como `usuario@caudal.local`, así el admin puede crear cuentas sin correo real. */
     fun signIn(context: Context, user: String, password: String): Result<Unit> = runCatching {
-        val email = user.trim().let { if ('@' in it) it else "$it@caudal.local" }
-        val session = executor.submit<SyncSession> { api.signIn(email, password) }.get()
+        // El teclado de la tablet suele poner mayúscula inicial; los correos de Supabase van en minúsculas.
+        val email = user.trim().lowercase().let { if ('@' in it) it else "$it@caudal.local" }
+        val session = try {
+            executor.submit<SyncSession> { api.signIn(email, password) }.get()
+        } catch (wrapped: java.util.concurrent.ExecutionException) {
+            throw wrapped.cause ?: wrapped
+        }
         val preferences = prefs(context)
         val previousUser = preferences.getString("user_id", null)
         preferences.edit().apply {
             // Otro usuario en la misma tablet sube todo de nuevo bajo su propio dispositivo.
-            if (previousUser != session.userId) preferences.all.keys.filter { it.startsWith("hash:") }.forEach(::remove)
+            if (previousUser != session.userId) preferences.all.keys.filter { it.startsWith("hash:") }.forEach(::remove).also { remove("stores_pulled_at") }
         }.apply()
         saveSession(context, session)
         signedInEmail = session.email
-        syncNow(context)
+        pullSharedStores(context)
+    }
+
+    fun loginErrorMessage(error: Throwable): String = when {
+        error is SupabaseException && "email_not_confirmed" in (error.message ?: "") ->
+            "La cuenta no está confirmada. En Supabase → Authentication → Users, ábrela y confírmala."
+        error is SupabaseException && "invalid_credentials" in (error.message ?: "") ->
+            "Usuario o contraseña incorrectos. Escribe el correo completo tal como está en Supabase."
+        error is SupabaseException -> "Supabase rechazó el inicio de sesión: ${error.message}"
+        else -> "Sin conexión con Supabase. Revisa el internet de la tablet."
     }
 
     fun signOut(context: Context) {
@@ -71,6 +102,58 @@ object CaudalSync {
     fun syncNow(context: Context) {
         val appContext = context.applicationContext
         executor.execute { runCatching { syncOnce(appContext) } }
+    }
+
+    /** Lo registra la pantalla principal para recibir tiendas nuevas o cambiadas de otras tabletas. */
+    @Volatile
+    var sharedStoresListener: ((List<Store>) -> Unit)? = null
+
+    /** Al iniciar sesión o ruta: primero sube lo local y luego baja solo las tiendas que cambiaron desde la última vez. */
+    fun pullSharedStores(context: Context? = null) {
+        val appContext = context?.applicationContext ?: startedContext ?: return
+        executor.execute {
+            runCatching {
+                syncOnce(appContext)
+                pullStores(appContext)
+            }.onFailure { status = "Sin bajar tiendas: ${it.message ?: "sin conexión"}" }
+        }
+    }
+
+    private fun pullStores(context: Context) {
+        val session = loadSession(context) ?: return
+        val listener = sharedStoresListener ?: return
+        val preferences = prefs(context)
+        val since = preferences.getString("stores_pulled_at", null) ?: "1970-01-01T00:00:00Z"
+        val pulled = mutableListOf<Store>()
+        var newest = since
+        while (true) {
+            val page = Json.parseToJsonElement(
+                api.get(
+                    session,
+                    "/rest/v1/shared_stores?select=id,name,latitude,longitude,phone,archived,updated_at" +
+                        "&updated_at=gt.${URLEncoder.encode(since, "UTF-8")}&order=updated_at&limit=1000&offset=${pulled.size}",
+                ),
+            ).jsonArray
+            page.forEach { element ->
+                val row = element.jsonObject
+                pulled += Store(
+                    id = row.getValue("id").jsonPrimitive.content,
+                    name = row.getValue("name").jsonPrimitive.content,
+                    location = GeoPoint(row.getValue("latitude").jsonPrimitive.double, row.getValue("longitude").jsonPrimitive.double),
+                    phone = row["phone"]?.jsonPrimitive?.contentOrNull,
+                    archived = row.getValue("archived").jsonPrimitive.boolean,
+                )
+                newest = row.getValue("updated_at").jsonPrimitive.content
+            }
+            if (page.size < 1000) break
+        }
+        if (pulled.isEmpty()) return
+        // Marcarlas como ya subidas para que la mezcla no las devuelva a Supabase.
+        preferences.edit().apply {
+            pulled.forEach { putString("hash:store:${it.id}", SyncRows.hash(SyncRows.storeGroup(it))) }
+            putString("stores_pulled_at", newest)
+        }.apply()
+        android.os.Handler(android.os.Looper.getMainLooper()).post { listener(pulled) }
     }
 
     private fun syncOnce(context: Context) {
@@ -87,9 +170,9 @@ object CaudalSync {
                 saveSession(context, session)
             }
             val deviceId = deviceId(context, session.userId)
-            val location = RouteTrackingService.latestKnownLocation(context)
+            val location = newestLocation(context)
             val preferences = prefs(context)
-            api.upsert(session, "devices", kotlinx.serialization.json.JsonArray(listOf(buildJsonObject {
+            api.upsert(session, "devices", JsonArray(listOf(buildJsonObject {
                 put("id", deviceId)
                 put("name", "${Build.MANUFACTURER} ${Build.MODEL}")
                 put("last_seen_at", SyncRows.iso(System.currentTimeMillis()))
@@ -112,19 +195,38 @@ object CaudalSync {
             val state = CaudalStateWriter.runBlocking {
                 CaudalStateStore(File(context.filesDir, DataBackup.STATE_FILE)).load()
             }
-            var uploaded = 0
-            state?.let { SyncRows.groups(it, deviceId) }?.forEach { group ->
-                val hash = sha1(group.tables.joinToString("\n") { (table, rows) -> "$table=$rows" })
-                if (preferences.getString("hash:${group.key}", null) == hash) return@forEach
-                group.tables.forEach { (table, rows) -> api.upsert(session, table, rows) }
-                preferences.edit().putString("hash:${group.key}", hash).apply()
-                uploaded++
-            }
+            val changed = state?.let { SyncRows.groups(it, deviceId) }.orEmpty()
+                .map { it to SyncRows.hash(it) }
+                .filter { (group, hash) -> preferences.getString("hash:${group.key}", null) != hash }
+            // Un solo envío por tabla con todo lo que cambió, para gastar pocas peticiones.
+            changed.flatMap { (group, _) -> group.tables }
+                .groupBy({ it.first }, { it.second })
+                .forEach { (table, arrays) -> api.upsert(session, table, JsonArray(arrays.flatten())) }
+            preferences.edit().apply { changed.forEach { (group, hash) -> putString("hash:${group.key}", hash) } }.apply()
             status = "Sincronizado ${java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date())}" +
-                if (uploaded > 0) " ($uploaded cambios)" else ""
+                if (changed.isNotEmpty()) " (${changed.size} cambios)" else ""
         } catch (error: Exception) {
             status = "Sin sincronizar: ${error.message ?: "sin conexión"}"
         }
+    }
+
+    /**
+     * La ruta guarda solo puntos precisos para el recorrido; para la oficina basta la última posición que Android
+     * ya tenga (también fuera de ruta). getLastKnownLocation no enciende el GPS, así que no gasta batería.
+     */
+    @android.annotation.SuppressLint("MissingPermission") // el permiso se revisa arriba en `granted`
+    private fun newestLocation(context: Context): RouteTrackingService.Companion.KnownLocation? {
+        val tracked = RouteTrackingService.latestKnownLocation(context)
+        val granted = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            .any { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
+        if (!granted) return tracked
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val system = runCatching {
+            manager.getProviders(true).mapNotNull { manager.getLastKnownLocation(it) }.maxByOrNull(Location::getTime)
+        }.getOrNull()
+            ?.let { RouteTrackingService.Companion.KnownLocation(tracked?.routeId, GeoPoint(it.latitude, it.longitude), it.time) }
+            ?.takeIf { it.point.isValid }
+        return listOfNotNull(tracked, system).maxByOrNull { it.recordedAtEpochMillis }
     }
 
     private fun deviceId(context: Context, userId: String): String {
@@ -158,6 +260,5 @@ object CaudalSync {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
-    private fun sha1(text: String): String =
-        MessageDigest.getInstance("SHA-1").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+
 }

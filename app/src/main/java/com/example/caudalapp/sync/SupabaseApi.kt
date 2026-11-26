@@ -49,6 +49,8 @@ class SupabaseApi(private val baseUrl: String, private val anonKey: String) {
         request("POST", "/rest/v1/$table", row.toString(), session.accessToken, mapOf("Prefer" to "return=minimal"))
     }
 
+    fun get(session: SyncSession, path: String): String = request("GET", path, null, session.accessToken)
+
     private fun authToken(grantType: String, body: JsonObject): SyncSession {
         val response = Json.parseToJsonElement(request("POST", "/auth/v1/token?grant_type=$grantType", body.toString(), null)).jsonObject
         val user = response.getValue("user").jsonObject
@@ -64,7 +66,7 @@ class SupabaseApi(private val baseUrl: String, private val anonKey: String) {
     private fun request(
         method: String,
         path: String,
-        body: String,
+        body: String?,
         accessToken: String?,
         headers: Map<String, String> = emptyMap(),
     ): String {
@@ -73,12 +75,12 @@ class SupabaseApi(private val baseUrl: String, private val anonKey: String) {
             connection.requestMethod = method
             connection.connectTimeout = 15_000
             connection.readTimeout = 20_000
-            connection.doOutput = true
+            connection.doOutput = body != null
             connection.setRequestProperty("apikey", anonKey)
             connection.setRequestProperty("Authorization", "Bearer ${accessToken ?: anonKey}")
             connection.setRequestProperty("Content-Type", "application/json")
             headers.forEach(connection::setRequestProperty)
-            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            body?.let { text -> connection.outputStream.use { it.write(text.toByteArray(Charsets.UTF_8)) } }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()

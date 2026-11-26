@@ -1,6 +1,10 @@
 package com.example.caudalapp.sync
 
 import com.example.caudalapp.domain.ActiveRoute
+import com.example.caudalapp.domain.Debt
+import com.example.caudalapp.domain.StoreAccountAdjustment
+import com.example.caudalapp.domain.StoreAccountAdjustmentType
+import com.example.caudalapp.domain.StoreAccountState
 import com.example.caudalapp.domain.GeoPoint
 import com.example.caudalapp.domain.ProductCatalog
 import com.example.caudalapp.domain.ProductDirectory
@@ -35,5 +39,25 @@ class SyncRowsTest {
         assertEquals("Tienda Azul", line.getValue("store_name").jsonPrimitive.content)
         assertEquals("20", line.getValue("total").jsonPrimitive.content)
         assertEquals(ledger.auditEntries.size, tables.getValue("movements").size)
+    }
+
+    @Test
+    fun `cuentas suben lo que se debe, lo pagado y bajan a cero al quedar al dia`() {
+        val bags = ProductCatalog.BAGS
+        val stores = StoreDirectory { "s1" }
+        val store = (stores.addStore("Tienda Azul", GeoPoint(14.6, -90.5)) as StoreChangeResult.Success).store
+        val debt = StoreAccountState(store.id, listOf(Debt(30, 30)), mapOf(bags.id to 2), emptyMap(), emptyMap())
+        fun row(state: CaudalRestoredState) = SyncRows.groups(state, "tab-1")
+            .single { it.key == "account:${store.id}" }.tables.single().second.single().jsonObject
+
+        val owing = row(CaudalRestoredState(null, stores, emptyList(), outstandingAccounts = listOf(debt)))
+        assertEquals("30", owing.getValue("money_due").jsonPrimitive.content)
+        assertEquals("2", owing.getValue("pending_deliveries").jsonObject.getValue(bags.name).jsonPrimitive.content)
+
+        val payment = StoreAccountAdjustment(storeId = store.id, type = StoreAccountAdjustmentType.MONEY_PAYMENT, amount = 30)
+        val settled = row(CaudalRestoredState(null, stores, emptyList(), accountAdjustments = listOf(payment)))
+        assertEquals("0", settled.getValue("money_due").jsonPrimitive.content)
+        assertEquals("30", settled.getValue("paid").jsonPrimitive.content)
+        assertEquals(0, settled.getValue("pending_deliveries").jsonObject.size)
     }
 }

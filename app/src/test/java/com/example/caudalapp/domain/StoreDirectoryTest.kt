@@ -10,6 +10,24 @@ class StoreDirectoryTest {
     private fun directory() = StoreDirectory(idGenerator = { "store-1" })
 
     @Test
+    fun `tiendas compartidas agregan nuevas, actualizan cambiadas e ignoran invalidas`() {
+        val stores = directory()
+        stores.addStore("Tienda Vieja", GeoPoint(14.6, -90.5))
+
+        val changed = stores.mergeShared(
+            listOf(
+                Store("store-1", "Tienda Renombrada", GeoPoint(14.6, -90.5)),
+                Store("store-2", "Tienda Nueva", GeoPoint(14.7, -90.4), phone = "5555"),
+                Store("store-3", "Mala", GeoPoint(200.0, 0.0)),
+            ),
+        )
+
+        assertTrue(changed)
+        assertEquals(listOf("Tienda Renombrada", "Tienda Nueva"), stores.allStores().map(Store::name))
+        assertFalse(stores.mergeShared(stores.allStores()))
+    }
+
+    @Test
     fun `agrega una tienda en la coordenada elegida por la mira`() {
         val directory = directory()
 

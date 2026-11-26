@@ -12,15 +12,15 @@ if (!config || !config.supabaseUrl || !config.supabaseAnonKey) {
 
 function start(db) {
   const charts = {};
-  let map, markers = {};
+  let map, markers = {}, storeLayer, fitted = false;
 
   $('login-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     $('login-error').textContent = '';
     const user = $('user').value.trim();
-    const email = user.includes('@') ? user : `${user}@caudal.local`;
+    const email = (user.includes('@') ? user : `${user}@caudal.local`).toLowerCase();
     const { error } = await db.auth.signInWithPassword({ email, password: $('password').value });
-    if (error) $('login-error').textContent = 'Usuario o contraseña incorrectos.';
+    if (error) $('login-error').textContent = error.code === 'email_not_confirmed' ? 'La cuenta no está confirmada en Supabase.' : error.code === 'invalid_credentials' ? 'Usuario o contraseña incorrectos.' : `No se pudo entrar: ${error.message}`;
     else show();
   });
   $('logout').addEventListener('click', async () => { await db.auth.signOut(); location.reload(); });
@@ -42,7 +42,8 @@ function start(db) {
     $('app').hidden = false;
     if (!map) {
       map = L.map('map').setView([14.64, -90.51], 11);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+      // OSM exige que la página se sirva por http(s) (Cloudflare Pages o servidor local); desde file:// sale 403.
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
     }
     load();
   }
@@ -62,29 +63,42 @@ function start(db) {
     const days = Number($('period').value);
     const since = days ? new Date(Date.now() - days * 86400000).toISOString() : '1970-01-01T00:00:00Z';
     try {
-      const [lines, routes, devices, profiles] = await Promise.all([
+      // Las tiendas van en la misma carga: una petición al abrir o al tocar Actualizar, nada en tiempo real.
+      const [lines, routes, devices, profiles, stores, accounts] = await Promise.all([
         fetchAll(() => db.from('sales_report').select('*').gte('recorded_at', since).order('recorded_at')),
         fetchAll(() => db.from('routes').select('*').eq('archived', false).gte('started_at', since).order('started_at', { ascending: false })),
         fetchAll(() => db.from('devices').select('*').order('last_seen_at', { ascending: false })),
         fetchAll(() => db.from('profiles').select('id, username')),
+        fetchAll(() => db.from('shared_stores').select('id, name, latitude, longitude, phone').eq('archived', false).order('id')),
+        // Sin la migración store_accounts la página sigue funcionando; solo avisa en la tarjeta.
+        fetchAll(() => db.from('store_accounts').select('*').order('store_name')).catch(() => null),
       ]);
       const names = Object.fromEntries(profiles.map((p) => [p.id, p.username]));
-      renderKpis(CaudalAnalytics.kpis(lines, routes));
-      renderDevices(devices, names);
+      renderKpis(CaudalAnalytics.kpis(lines, routes), accounts);
+      renderStores(stores);
+      renderDevices(devices, names); if (!fitted) { const points = [...Object.values(markers).map((m) => m.getLatLng()), ...storeLayer.getLayers().map((l) => l.getLatLng())]; if (points.length) { map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 16 }); fitted = true; } } if (!fitted) { const points = [...Object.values(markers).map((m) => m.getLatLng()), ...storeLayer.getLayers().map((l) => l.getLatLng())]; if (points.length) { map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 16 }); fitted = true; } }
       renderCharts(lines, routes);
       renderPrices(CaudalAnalytics.prices(lines));
       renderRoutes(routes, devices, names);
+      renderAccounts(accounts, devices, names);
     } catch (error) {
       $('kpis').innerHTML = `<p class="error">No se pudieron cargar los datos: ${esc(error.message)}</p>`;
     }
   }
 
-  function renderKpis(k) {
+  function renderKpis(k, accounts) {
     const items = [
       ['Ventas', Q(k.sales)], ['Unidades', k.units.toLocaleString('es-GT')], ['Gastos de ruta', Q(k.expenses)],
       ['Ganancia (ventas − gastos)', Q(k.profit)], ['Rutas', k.routes], ['Venta promedio', Q(k.averageTicket)], ['Por cobrar al cierre', Q(k.pending)],
     ];
+    if (accounts) items.push(['Deben las tiendas', Q(accounts.reduce((sum, a) => sum + a.money_due, 0))]);
     $('kpis').innerHTML = items.map(([label, value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
+  }
+
+  function renderStores(stores) {
+    storeLayer?.remove();
+    storeLayer = L.layerGroup(stores.map((s) => L.circleMarker([s.latitude, s.longitude], { radius: 5, color: '#1565c0', weight: 1, fillOpacity: 0.7 })
+      .bindPopup(`<b>${esc(s.name)}</b>${s.phone ? '<br>' + esc(s.phone) : ''}`))).addTo(map);
   }
 
   function renderDevices(devices, names) {
@@ -139,5 +153,17 @@ function start(db) {
       routes.map((r) => `<tr><td>${when(r.started_at)}</td><td>${esc(r.name)}</td><td>${esc(owner[r.device_id] || '')}</td><td>${r.status}</td>` +
         `<td class="num">${Q(r.total_sales)}</td><td class="num">${Q(r.total_expenses)}</td><td class="num">${Q(r.total_sales - r.total_expenses)}</td>` +
         `<td class="num">${Q(r.expected_cash)}</td><td class="num">${r.counted_cash == null ? '—' : Q(r.counted_cash)}</td></tr>`).join('');
+  }
+
+  function renderAccounts(accounts, devices, names) {
+    if (!accounts) { $('accounts').innerHTML = '<tr><td class="error">Falta correr la migración store_accounts en Supabase.</td></tr>'; return; }
+    const owner = Object.fromEntries(devices.map((d) => [d.id, names[d.user_id] || d.name]));
+    const units = (map) => Object.entries(map || {}).map(([name, n]) => `${n} ${esc(name)}`).join(', ') || '—';
+    const open = accounts.filter((a) => a.money_due > 0 || a.paid > 0 || Object.keys(a.pending_deliveries).length || Object.keys(a.pending_containers).length);
+    $('accounts').innerHTML = open.length
+      ? '<tr><th>Tienda</th><th>Vendedor</th><th class="num">Debe</th><th class="num">Ya pagó</th><th>Entregas pendientes</th><th>Envases pendientes</th><th>Actualizado</th></tr>' +
+        open.map((a) => `<tr><td>${esc(a.store_name)}</td><td>${esc(owner[a.device_id] || '')}</td><td class="num">${Q(a.money_due)}</td><td class="num">${Q(a.paid)}</td>` +
+          `<td>${units(a.pending_deliveries)}</td><td>${units(a.pending_containers)}</td><td>${when(a.updated_at)}</td></tr>`).join('')
+      : '<tr><td class="muted">Ninguna tienda debe nada.</td></tr>';
   }
 }

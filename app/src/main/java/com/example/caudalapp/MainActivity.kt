@@ -88,7 +88,17 @@ class MainActivity : ComponentActivity() {
         appState.attachPersistence(File(filesDir, "caudal-state-v1.json"))
         appState.attachSettings(applicationContext)
         enableEdgeToEdge()
-        setContent { CaudalAPPTheme(appState.settings.theme) { CaudalApp(appState) } }
+        setContent {
+            CaudalAPPTheme(appState.settings.theme) {
+                // Se pregunta en cada arranque sin sesión; "modo prueba" solo salta el login hasta cerrar la app.
+                var skippedLogin by rememberSaveable { mutableStateOf(false) }
+                if (com.example.caudalapp.sync.CaudalSync.configured && com.example.caudalapp.sync.CaudalSync.signedInEmail == null && !skippedLogin) {
+                    LoginScreen(onUseWithoutAccount = { skippedLogin = true })
+                } else {
+                    CaudalApp(appState)
+                }
+            }
+        }
     }
 
     override fun onStop() {

@@ -12,6 +12,8 @@ La app sigue funcionando igual sin esto. Con Supabase configurado, cada tableta 
 
 1. Menú izquierdo → **SQL Editor** → **New query**.
 2. Abre `supabase/migrations/20261123000000_caudal_sync.sql` de este repositorio, copia todo, pégalo y toca **Run**. Debe decir "Success".
+3. Repite con `supabase/migrations/20261124000000_shared_stores.sql` (tiendas compartidas entre todas las tabletas). Cada archivo nuevo de esa carpeta se corre una sola vez, en orden.
+4. Repite con `supabase/migrations/20261125000000_store_accounts.sql` (cuentas pendientes de cada tienda: lo que debe y lo que ya pagó).
 
 ## 3. Cerrar el registro público
 
@@ -54,10 +56,19 @@ La app sigue funcionando igual sin esto. Con Supabase configurado, cada tableta 
 
 1. Copia `web/config.example.js` como `web/config.js` y pega la URL y la llave anon. Esta llave es pública por diseño; los datos los protegen las reglas RLS y las contraseñas. Puedes subir `config.js` al repositorio.
 2. Hosting gratis, cualquiera de estas:
-   - **Cloudflare Pages** (acepta repos privados): Workers & Pages → Create → Pages → Connect to Git → elige `CaudalAPP` → Build command vacío → Build output directory `web` → Deploy.
-   - **Netlify Drop**: https://app.netlify.com/drop y arrastra la carpeta `web`.
-   - Sin hosting: abre `web/index.html` con doble clic en la computadora.
+   - **Cloudflare Pages, subiendo la carpeta** (lo más simple): https://dash.cloudflare.com → crea cuenta gratis → **Workers & Pages** → **Create** → pestaña **Pages** → **Upload assets** (o "Drag and drop your files") → nombre `caudal-oficina` → arrastra la carpeta `web` → **Deploy**. Queda en `https://caudal-oficina.pages.dev`. Para actualizarla, en el proyecto → **Create deployment** y arrastra la carpeta otra vez.
+   - **Cloudflare Pages desde GitHub** (se actualiza solo con cada push): Workers & Pages → Create → Pages → Connect to Git → `CaudalAPP` → Build command vacío → Build output directory `web`. Requiere que `web/config.js` esté subido.
+   - **En tu computadora**: en una terminal dentro de la carpeta `web` corre `py -m http.server 8000` y abre http://localhost:8000. Con doble clic (file://) la página funciona pero el mapa sale "403", porque OpenStreetMap bloquea páginas abiertas como archivo.
+   - Costo: Cloudflare Pages gratis no cobra por visitas. Los datos los pide la página directo a Supabase, que en el plan gratis no limita peticiones.
 3. Entra con la cuenta admin. Verás tabletas (toca una para ver su última ubicación en el mapa), productos más vendidos, precios, ganancia (ventas menos gastos de ruta) y qué día de la semana conviene salir.
+
+## Tiendas compartidas
+
+- Todas las cuentas ven las mismas tiendas (nombre, teléfono y latitud/longitud).
+- La tableta sube solo la tienda que se agrega o cambia, en su sincronización de cada minuto.
+- Baja tiendas solo al **iniciar sesión** y al **iniciar ruta**, y únicamente las que cambiaron desde la última vez. Una tableta nueva baja todas al entrar.
+- Si dos tabletas editan la misma tienda, queda el último cambio subido.
+- Espacio: cada tienda ocupa menos de 1 KB; 1,000 tiendas son menos de 1 MB de los 500 MB gratis.
 
 ## Notas del plan gratis
 

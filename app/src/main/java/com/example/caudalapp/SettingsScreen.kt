@@ -218,7 +218,7 @@ private fun SyncSettingsCard() {
                     error = null
                     scope.launch {
                         error = withContext(Dispatchers.IO) { CaudalSync.signIn(context, user, password) }
-                            .exceptionOrNull()?.let { "No se pudo entrar. Revisa usuario, contraseña e internet." }
+                            .exceptionOrNull()?.let(CaudalSync::loginErrorMessage)
                         if (error == null) password = ""
                         busy = false
                     }

@@ -16,6 +16,7 @@ import com.example.caudalapp.persistence.CaudalRestoredState
 import com.example.caudalapp.persistence.CaudalStateStore
 import com.example.caudalapp.persistence.CaudalStateWriter
 import com.example.caudalapp.persistence.detachedCopy
+import com.example.caudalapp.sync.CaudalSync
 import java.io.File
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -47,6 +48,12 @@ class CaudalViewModel : ViewModel() {
         stateStore = CaudalStateStore(file)
         CaudalStateWriter.addExternalChangeListener(externalChangeListener)
         reloadPersistence()
+        CaudalSync.sharedStoresListener = { remote ->
+            if (stores.mergeShared(remote)) {
+                stores = StoreDirectory.restore(stores.allStores())
+                persist()
+            }
+        }
     }
 
     fun reloadPersistence() {
@@ -56,6 +63,7 @@ class CaudalViewModel : ViewModel() {
 
     override fun onCleared() {
         CaudalStateWriter.removeExternalChangeListener(externalChangeListener)
+        CaudalSync.sharedStoresListener = null
     }
 
     private fun applyRestoredState(restored: CaudalRestoredState) {
@@ -132,6 +140,8 @@ class CaudalViewModel : ViewModel() {
     fun completionTransitionEvents() = completionTransitions.receiveAsFlow()
 
     fun startRoute(route: ActiveRoute) {
+        // Una sola descarga por ruta: trae las tiendas que otras tabletas agregaron o cambiaron.
+        CaudalSync.pullSharedStores()
         route.ledger.registerProducts(products.allProducts())
         route.ledger.importAccounts(outstandingAccounts)
         activeRoute = route
