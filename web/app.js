@@ -27,6 +27,8 @@ function start(db) {
   $('refresh').addEventListener('click', load);
   $('period').addEventListener('change', load);
   show();
+  // Cada 2 min y solo con la pestaña a la vista: cuida el límite gratis de datos de Supabase.
+  setInterval(() => { if (!document.hidden && !$('app').hidden) load(); }, 120000);
 
   async function show() {
     const { data: { session } } = await db.auth.getSession();
@@ -63,7 +65,7 @@ function start(db) {
     const days = Number($('period').value);
     const since = days ? new Date(Date.now() - days * 86400000).toISOString() : '1970-01-01T00:00:00Z';
     try {
-      // Las tiendas van en la misma carga: una petición al abrir o al tocar Actualizar, nada en tiempo real.
+      // Las tiendas van en la misma carga: una petición por recarga.
       const [lines, routes, devices, profiles, stores, accounts] = await Promise.all([
         fetchAll(() => db.from('sales_report').select('*').gte('recorded_at', since).order('recorded_at')),
         fetchAll(() => db.from('routes').select('*').eq('archived', false).gte('started_at', since).order('started_at', { ascending: false })),
