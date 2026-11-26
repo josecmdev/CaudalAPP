@@ -35,9 +35,9 @@ class SalePaymentPolicyTest {
     }
 
     @Test
-    fun `una entrega incompleta no se cobra aunque contado este seleccionado`() {
+    fun `una entrega incompleta se cobra al momento si no es fiado`() {
         assertEquals(
-            0,
+            50,
             SalePaymentPolicy.amountReceived(50, creditEnabled = false, typedAmount = null, hasPendingDelivery = true),
         )
     }

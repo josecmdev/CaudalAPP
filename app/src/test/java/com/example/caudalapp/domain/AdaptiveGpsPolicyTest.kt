@@ -19,6 +19,13 @@ class AdaptiveGpsPolicyTest {
     }
 
     @Test
+    fun `descarta puntos imprecisos`() {
+        assertTrue(AdaptiveGpsPolicy.isAccurateEnough(null))
+        assertTrue(AdaptiveGpsPolicy.isAccurateEnough(12f))
+        assertFalse(AdaptiveGpsPolicy.isAccurateEnough(250f))
+    }
+
+    @Test
     fun `clasifica movimiento con umbral resistente al ruido del gps`() {
         assertFalse(AdaptiveGpsPolicy.isMoving(null))
         assertFalse(AdaptiveGpsPolicy.isMoving(0.8f))

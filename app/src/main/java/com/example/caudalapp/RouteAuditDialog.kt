@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -103,17 +104,28 @@ fun AuditListDialog(
 ) {
     val salesById = sales.associateBy(SaleRecord::id)
     val expensesById = expenses.associateBy(RouteExpense::id)
-    AlertDialog(
+    SidePanelDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) }
                 if (auditEntries.isEmpty()) {
-                    Text("Todavía no hay movimientos")
+                    Text("Todavía no hay movimientos", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Aquí aparecen ventas, cobros, recargas, gastos y transferencias en orden, con la hora.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 } else {
+                    val cashIn = auditEntries.sumOf { it.cashDelta.coerceAtLeast(0) }
+                    val cashOut = auditEntries.sumOf { (-it.cashDelta).coerceAtLeast(0) }
+                    Text(
+                        "${auditEntries.size} movimientos · +Q$cashIn entrada · −Q$cashOut salida",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                     LazyColumn(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         items(auditEntries.asReversed(), key = RouteAuditEntry::id) { entry ->
@@ -137,7 +149,8 @@ fun AuditListDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
+        confirmButton = { Button(onClick = onDismiss) { Text("Cerrar") } },
+        dismissButton = {},
     )
 }
 
@@ -150,20 +163,32 @@ private fun AuditEntryCard(
     onCancel: (() -> Unit)?,
     onCancelExpense: (() -> Unit)?,
 ) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .5f)),
+    ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(entry.title, fontWeight = FontWeight.Bold)
-                Text(formatAuditTime(entry.recordedAtEpochMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            storeName?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
-            Text(entry.detail, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (entry.cashDelta != 0) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (entry.cashDelta > 0) "+Q${entry.cashDelta}" else "−Q${-entry.cashDelta}",
-                    color = if (entry.cashDelta > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                    fontWeight = FontWeight.Bold,
+                    formatAuditTime(entry.recordedAtEpochMillis),
+                    modifier = Modifier.padding(end = 12.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge,
                 )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(entry.title, fontWeight = FontWeight.Bold)
+                    storeName?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) }
+                    Text(entry.detail, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (entry.cashDelta != 0) {
+                    Text(
+                        if (entry.cashDelta > 0) "+Q${entry.cashDelta}" else "−Q${-entry.cashDelta}",
+                        color = if (entry.cashDelta > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
             }
             if (sale?.cancelled == true) {
                 Text(

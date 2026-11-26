@@ -9,6 +9,7 @@ import com.example.caudalapp.domain.StoreAccountState
 import com.example.caudalapp.domain.SuggestedPricePolicy
 import com.example.caudalapp.persistence.CaudalRestoredState
 import com.example.caudalapp.persistence.CaudalStateStore
+import com.example.caudalapp.persistence.CaudalStateWriter
 import java.io.File
 
 data class CarStoreSnapshot(
@@ -42,12 +43,26 @@ object CarBagPresetPolicy {
 class CaudalCarRepository(private val stateFile: File) {
     private val stateStore = CaudalStateStore(stateFile)
 
-    fun snapshot(): CaudalCarSnapshot = synchronized(FILE_ACCESS) {
+    private var cachedKey: Pair<Long, Long>? = null
+    private var cachedSnapshot: CaudalCarSnapshot? = null
+
+    // shortcut: detecta cambios por fecha y tamaño del archivo; dos guardados del mismo tamaño en el mismo
+    // segundo dejarían una pantalla atrasada hasta el siguiente cambio. Si pasa, guardar un contador de versión.
+    fun snapshot(): CaudalCarSnapshot = CaudalStateWriter.runBlocking {
+        val key = stateFile.lastModified() to stateFile.length()
+        cachedSnapshot?.takeIf { key == cachedKey }?.let { return@runBlocking it }
+        buildSnapshot().also {
+            cachedKey = key
+            cachedSnapshot = it
+        }
+    }
+
+    private fun buildSnapshot(): CaudalCarSnapshot {
         val state = stateStore.load()
-        if (state == null) return@synchronized CaudalCarSnapshot(null, null, 0, emptyList())
+        if (state == null) return CaudalCarSnapshot(null, null, 0, emptyList())
         val activeAccounts = state.activeRoute?.ledger?.outstandingAccountStates()?.associateBy(StoreAccountState::storeId)
         val savedAccounts = state.outstandingAccounts.associateBy(StoreAccountState::storeId)
-        CaudalCarSnapshot(
+        return CaudalCarSnapshot(
             routeName = state.activeRoute?.name,
             routeStartedAtEpochMillis = state.activeRoute?.startedAtEpochMillis,
             bagStock = state.activeRoute?.ledger?.availableStock(ProductCatalog.BAGS.id) ?: 0,
@@ -73,20 +88,23 @@ class CaudalCarRepository(private val stateFile: File) {
             ?: return@update CarOperationResult.Rejected("La tienda ya no existe")
         val total = CarBagPresetPolicy.totalFor(quantity)
             ?: return@update CarOperationResult.Rejected("La cantidad no tiene un precio rápido")
-        val available = route.ledger.availableStock(ProductCatalog.BAGS.id)
-        if (available < quantity) {
-            return@update CarOperationResult.Rejected("Solo hay $available bolsas. Completa esta venta en la tablet")
-        }
+        // Igual que en la tablet: lo que no hay en el camión queda por entregar y el inventario se ve en negativo.
+        val delivered = quantity.coerceAtMost(route.ledger.availableStock(ProductCatalog.BAGS.id).coerceAtLeast(0))
+        val received = total
         val product = route.ledger.products().firstOrNull { it.id == ProductCatalog.BAGS.id }
             ?: state.products.get(ProductCatalog.BAGS.id)
             ?: ProductCatalog.BAGS
         route.ledger.registerStoreSale(
             storeId = store.id,
-            lines = listOf(SaleLine(product, requested = quantity, delivered = quantity, total = total)),
-            amountReceived = total,
+            lines = listOf(SaleLine(product, requested = quantity, delivered = delivered, total = total)),
+            amountReceived = received,
             location = store.location,
         )
-        CarOperationResult.Success("Venta registrada: $quantity bolsas · Q$total")
+        if (delivered < quantity) {
+            CarOperationResult.Success("Venta registrada: Q$total · ${quantity - delivered} bolsas por entregar")
+        } else {
+            CarOperationResult.Success("Venta registrada: $quantity bolsas · Q$total")
+        }
     }
 
     fun collectFullDebt(storeId: String): CarOperationResult = update { state ->
@@ -105,7 +123,7 @@ class CaudalCarRepository(private val stateFile: File) {
         val due = AccountSettlementPolicy.moneyDue(account)
         if (due <= 0) return@update CarOperationResult.Rejected("Esta tienda no tiene deuda")
         val updated = AccountSettlementPolicy.registerPayment(account, due)
-        state.outstandingAccounts = state.outstandingAccounts.replaceAccount(updated)
+        state.outstandingAccounts = AccountSettlementPolicy.replace(state.outstandingAccounts, updated)
         state.accountAdjustments += StoreAccountAdjustment(
             storeId = storeId,
             type = StoreAccountAdjustmentType.MONEY_PAYMENT,
@@ -114,18 +132,18 @@ class CaudalCarRepository(private val stateFile: File) {
         CarOperationResult.Success("Cobro completo registrado: Q$due")
     }
 
-    private fun update(operation: (MutableCarState) -> CarOperationResult): CarOperationResult = synchronized(FILE_ACCESS) {
-        val restored = stateStore.load()
-            ?: return@synchronized CarOperationResult.Rejected("Abre Caudal App al menos una vez en este dispositivo")
-        val mutable = MutableCarState(restored)
-        val result = runCatching { operation(mutable) }
-            .getOrElse { CarOperationResult.Rejected(it.message ?: "No se pudo registrar la operación") }
-        if (result is CarOperationResult.Success) stateStore.save(mutable.toRestoredState())
-        result
-    }
-
-    private companion object {
-        val FILE_ACCESS = Any()
+    private fun update(operation: (MutableCarState) -> CarOperationResult): CarOperationResult {
+        val result = CaudalStateWriter.runBlocking {
+            val restored = stateStore.load()
+                ?: return@runBlocking CarOperationResult.Rejected("Abre Caudal App al menos una vez en este dispositivo")
+            val mutable = MutableCarState(restored)
+            val result = runCatching { operation(mutable) }
+                .getOrElse { CarOperationResult.Rejected(it.message ?: "No se pudo registrar la operación") }
+            if (result is CarOperationResult.Success) stateStore.save(mutable.toRestoredState())
+            result
+        }
+        if (result is CarOperationResult.Success) CaudalStateWriter.notifyExternalChange()
+        return result
     }
 }
 
@@ -146,8 +164,3 @@ private class MutableCarState(restored: CaudalRestoredState) {
         accountAdjustments = accountAdjustments,
     )
 }
-
-private fun List<StoreAccountState>.replaceAccount(updated: StoreAccountState): List<StoreAccountState> =
-    mapNotNull { current ->
-        if (current.storeId != updated.storeId) current else updated.takeIf(AccountSettlementPolicy::hasPending)
-    }

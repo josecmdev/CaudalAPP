@@ -5,15 +5,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -33,7 +31,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import com.example.caudalapp.domain.ActiveRoute
 import com.example.caudalapp.domain.Product
 import com.example.caudalapp.domain.SaleLine
@@ -68,15 +65,11 @@ fun QuickSaleDialog(
     var customerPhone by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     val cart = remember { mutableStateListOf<QuickSaleLineUi>() }
+    var submitted by remember { mutableStateOf(false) }
     val cartTotal = cart.sumOf(QuickSaleLineUi::total)
 
-    AlertDialog(
+    SidePanelDialog(
         onDismissRequest = {},
-        properties = DialogProperties(
-            dismissOnBackPress = false,
-            dismissOnClickOutside = false,
-        ),
-        shape = RoundedCornerShape(26.dp),
         title = {
             Column {
                 Text("Venta rápida", fontWeight = FontWeight.Bold)
@@ -85,7 +78,7 @@ fun QuickSaleDialog(
         },
         text = {
             LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
+                modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
@@ -175,6 +168,15 @@ fun QuickSaleDialog(
                             singleLine = true,
                         )
                     }
+                    val left = route.ledger.availableStock(selectedProduct.id) -
+                        cart.filter { it.product.id == selectedProduct.id }.sumOf(QuickSaleLineUi::quantity)
+                    if ((quantityText.toIntOrNull() ?: 0) > left) {
+                        Text(
+                            "Hay ${left.coerceAtLeast(0)} ${selectedProduct.name} en el camión; el inventario quedará en negativo y se descuenta al recargar.",
+                            color = MaterialTheme.colorScheme.tertiary,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
                 if (selectedProduct.returnable) {
                     item {
@@ -235,8 +237,9 @@ fun QuickSaleDialog(
         },
         confirmButton = {
             Button(
-                enabled = cart.isNotEmpty(),
+                enabled = cart.isNotEmpty() && !submitted,
                 onClick = {
+                    if (submitted) return@Button
                     val lines = cart.map { line ->
                         SaleLine(
                             product = line.product,
@@ -255,6 +258,7 @@ fun QuickSaleDialog(
                         customerPhone = customerPhone,
                     )
                     if (result.accepted) {
+                        submitted = true
                         onSaleRegistered(lines.sumOf(SaleLine::delivered), cartTotal)
                     } else {
                         error = result.reason

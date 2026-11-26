@@ -33,12 +33,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.example.caudalapp.domain.GeoPoint
 import com.example.caudalapp.domain.StoreMarkerState
 import com.example.caudalapp.domain.AdaptiveGpsPolicy
+import com.example.caudalapp.domain.LiveRouteTrail
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.location.LocationComponentActivationOptions
+import org.maplibre.android.location.LocationComponentOptions
 import org.maplibre.android.location.engine.LocationEngineRequest
 import org.maplibre.android.location.modes.CameraMode
 import org.maplibre.android.location.modes.RenderMode
@@ -47,12 +49,19 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.layers.PropertyFactory.circleColor
 import org.maplibre.android.style.layers.PropertyFactory.circleRadius
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
 import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
 import org.maplibre.android.style.layers.PropertyFactory.iconAllowOverlap
+import org.maplibre.android.style.layers.PropertyFactory.lineCap
+import org.maplibre.android.style.layers.PropertyFactory.lineColor
+import org.maplibre.android.style.layers.PropertyFactory.lineJoin
+import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
+import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.layers.PropertyFactory.iconImage
 import org.maplibre.android.style.layers.PropertyFactory.iconOffset
 import org.maplibre.android.style.layers.PropertyFactory.iconSize
@@ -63,6 +72,7 @@ import org.maplibre.android.style.sources.GeoJsonOptions
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
 private const val CAUDAL_NAVIGATION_ZOOM = 16.2
@@ -71,6 +81,11 @@ private const val STORE_SOURCE_ID = "caudal-store-source"
 private const val STORE_LAYER_ID = "caudal-store-layer"
 private const val STORE_CLUSTER_LAYER_ID = "caudal-store-clusters"
 private const val STORE_CLUSTER_COUNT_LAYER_ID = "caudal-store-cluster-count"
+private const val TRAIL_SOURCE_ID = "caudal-live-trail-source"
+private const val TRAIL_LAYER_ID = "caudal-live-trail-layer"
+
+// shortcut: el rastro vive en memoria; si Android cierra la app se pierde lo dibujado (el recorrido guardado no). Cargar RouteTrackStore al abrir si molesta.
+private val liveTrail = LiveRouteTrail()
 
 data class MapStorePoint(
     val id: String,
@@ -95,10 +110,12 @@ class CaudalMapController {
     private var onCenterChanged: (GeoPoint) -> Unit = {}
     private var clickListener: MapLibreMap.OnMapClickListener? = null
     private var cameraIdleListener: MapLibreMap.OnCameraIdleListener? = null
+    private val storeImageIds = mutableSetOf<String>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val movementMonitor = object : Runnable {
         override fun run() {
             if (automaticFollow && !placementMode) updateMovementAwareTracking()
+            recordTrailPoint()
             mainHandler.postDelayed(this, MOVEMENT_CHECK_INTERVAL_MILLIS)
         }
     }
@@ -160,6 +177,8 @@ class CaudalMapController {
 
     internal fun onStyleLoaded(style: Style) {
         this.style = style
+        storeImageIds.clear()
+        renderTrail()
         renderStores()
         pendingFocus?.let(::focusOn)
     }
@@ -178,17 +197,50 @@ class CaudalMapController {
 
     fun setAutomaticFollow(enabled: Boolean) {
         automaticFollow = enabled
-        mainHandler.removeCallbacks(movementMonitor)
-        if (enabled) mainHandler.post(movementMonitor)
+    }
+
+    /** La clave identifica la ruta activa; null = sin ruta, no se dibuja rastro. */
+    fun setTrailKey(key: Long?) {
+        if (key != liveTrail.key) liveTrail.reset(key)
+        renderTrail()
+    }
+
+    private fun recordTrailPoint() {
+        val location = map?.locationComponent?.takeIf { it.isLocationComponentActivated }?.lastKnownLocation ?: return
+        if (liveTrail.add(GeoPoint(location.latitude, location.longitude), android.os.SystemClock.uptimeMillis())) renderTrail()
+    }
+
+    private fun renderTrail() {
+        val currentStyle = style ?: return
+        val points = liveTrail.snapshot.map { Point.fromLngLat(it.longitude, it.latitude) }
+        val data = if (points.size >= 2) FeatureCollection.fromFeature(Feature.fromGeometry(LineString.fromLngLats(points)))
+        else FeatureCollection.fromFeatures(emptyList())
+        val source = currentStyle.getSourceAs<GeoJsonSource>(TRAIL_SOURCE_ID)
+        if (source != null) {
+            source.setGeoJson(data)
+            return
+        }
+        currentStyle.addSource(GeoJsonSource(TRAIL_SOURCE_ID, data))
+        // Debajo de las tiendas para no tapar sus globos.
+        val trail = LineLayer(TRAIL_LAYER_ID, TRAIL_SOURCE_ID).withProperties(
+            lineColor("#2E7DD7"),
+            lineWidth(6f),
+            lineOpacity(.6f),
+            lineCap(Property.LINE_CAP_ROUND),
+            lineJoin(Property.LINE_JOIN_ROUND),
+        )
+        if (currentStyle.getLayer(STORE_CLUSTER_LAYER_ID) != null) currentStyle.addLayerBelow(trail, STORE_CLUSTER_LAYER_ID)
+        else currentStyle.addLayer(trail)
     }
 
     fun setMapStyle(mapStyle: AppMapStyle) {
-        navigationTilt = if (mapStyle == AppMapStyle.THREE_D) 52.0 else 24.0
+        navigationTilt = if (mapStyle == AppMapStyle.THREE_D) 52.0 else 40.0
     }
 
     private fun renderStores() {
         val currentContext = context ?: return
         val currentStyle = style ?: return
+        val newImages = HashMap<String, Bitmap>()
         val features = latestStores.map { store ->
             val badge = when {
                 store.moneyDue > 0 -> "Debe Q${store.moneyDue}"
@@ -196,18 +248,28 @@ class CaudalMapController {
                 else -> null
             }
             val imageId = storeCompositeImageId(store, badge)
-            if (currentStyle.getImage(imageId) == null) {
-                currentStyle.addImage(imageId, createStoreCompositeBitmap(currentContext, store, badge))
+            if (imageId !in storeImageIds && imageId !in newImages && currentStyle.getImage(imageId) == null) {
+                newImages[imageId] = StoreMarkerBitmaps.composite(imageId) {
+                    val base = StoreMarkerBitmaps.base(store.state) { loadStoreMarkerBitmap(currentContext, store.state) }
+                    createStoreCompositeBitmap(base, store, badge)
+                }
             }
             Feature.fromGeometry(Point.fromLngLat(store.location.longitude, store.location.latitude)).apply {
                 addStringProperty("storeId", store.id)
                 addStringProperty("iconId", imageId)
             }
         }
+        // Un solo paso al motor nativo en vez de uno por tienda: era lo que trababa al abrir el mapa de la ruta.
+        if (newImages.isNotEmpty()) currentStyle.addImages(newImages)
+        val usedIds = features.mapTo(mutableSetOf()) { it.getStringProperty("iconId") }
+        val unusedIds = storeImageIds - usedIds
+        storeImageIds.clear()
+        storeImageIds += usedIds
         val collection = FeatureCollection.fromFeatures(features)
         val existingSource = currentStyle.getSourceAs<GeoJsonSource>(STORE_SOURCE_ID)
         if (existingSource != null) {
             existingSource.setGeoJson(collection)
+            unusedIds.forEach(currentStyle::removeImage)
             return
         }
         currentStyle.addSource(
@@ -219,7 +281,7 @@ class CaudalMapController {
         )
         currentStyle.addLayer(
             CircleLayer(STORE_CLUSTER_LAYER_ID, STORE_SOURCE_ID).withProperties(
-                circleColor("#0878E8"),
+                circleColor("#1D4F91"),
                 circleRadius(22f),
                 circleStrokeColor("#FFFFFF"),
                 circleStrokeWidth(3f),
@@ -327,7 +389,9 @@ fun MapLibreMapView(
     onLocationPermissionGranted: () -> Unit = {},
     automaticFollow: Boolean = true,
     gpsIntervalSeconds: Int = 1,
+    shareRouteGps: Boolean = false,
     mapStyle: AppMapStyle = AppMapStyle.LIBERTY,
+    trailKey: Long? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -353,11 +417,16 @@ fun MapLibreMapView(
     LaunchedEffect(mapStyle) {
         controller.setMapStyle(mapStyle)
     }
+    LaunchedEffect(trailKey) {
+        controller.setTrailKey(trailKey)
+    }
 
     LaunchedEffect(Unit) {
         if (!permissionGranted) {
+            // En Android 13+ sin este permiso no se ve el aviso de "ruta activa" del GPS.
+            val notifications = if (android.os.Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray()
             permissionLauncher.launch(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION) + notifications,
             )
         }
     }
@@ -405,7 +474,7 @@ fun MapLibreMapView(
                     map.cameraPosition = CameraPosition.Builder()
                         .target(LatLng(initialCenter.latitude, initialCenter.longitude))
                         .zoom(CAUDAL_NAVIGATION_ZOOM)
-                        .tilt(if (mapStyle == AppMapStyle.THREE_D) 52.0 else 24.0)
+                        .tilt(if (mapStyle == AppMapStyle.THREE_D) 52.0 else 40.0)
                         .build()
                     map.setMinZoomPreference(9.0)
                     map.setMaxZoomPreference(19.0)
@@ -427,7 +496,7 @@ fun MapLibreMapView(
                         if (lifetime.destroyed || controller.map !== map) return@setStyle
                         controller.onStyleLoaded(style)
                         if (permissionGranted) {
-                            safelyEnableCaudalLocation(context, map, style, controller, gpsIntervalSeconds)
+                            safelyEnableCaudalLocation(context, map, style, controller, gpsIntervalSeconds, shareRouteGps)
                         }
                     }
                 }
@@ -443,13 +512,25 @@ fun MapLibreMapView(
         val map = mapReady ?: return@LaunchedEffect
         if (permissionGranted && !lifetime.destroyed && controller.map === map) {
             map.style?.let {
-                safelyEnableCaudalLocation(context, map, it, controller, gpsIntervalSeconds)
+                safelyEnableCaudalLocation(context, map, it, controller, gpsIntervalSeconds, shareRouteGps)
             }
         }
     }
 }
 
 private class MapViewLifetime(var destroyed: Boolean = false)
+
+/** Los marcadores dibujados sobreviven al mapa: al pasar del mapa de inicio al de la ruta no se vuelven a pintar. */
+private object StoreMarkerBitmaps {
+    private val bases = mutableMapOf<StoreMarkerState, Bitmap>()
+    private val composites = object : android.util.LruCache<String, Bitmap>(32 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+    }
+
+    fun base(state: StoreMarkerState, load: () -> Bitmap): Bitmap = bases.getOrPut(state, load)
+
+    fun composite(id: String, draw: () -> Bitmap): Bitmap = composites.get(id) ?: draw().also { composites.put(id, it) }
+}
 
 private fun StoreMarkerState.markerColor(): Int = when (this) {
     StoreMarkerState.DEBT -> Color.rgb(198, 40, 40)
@@ -486,7 +567,7 @@ private fun storeCompositeImageId(store: MapStorePoint, badge: String?): String 
  * remote map glyphs. This also keeps custom marker assets working offline.
  */
 private fun createStoreCompositeBitmap(
-    context: android.content.Context,
+    marker: Bitmap,
     store: MapStorePoint,
     badge: String?,
 ): Bitmap {
@@ -494,35 +575,40 @@ private fun createStoreCompositeBitmap(
     val height = if (badge == null) 154 else 180
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
-    val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    // Etiqueta oscura con borde blanco: se lee igual sobre calles claras, parques o mapa 3D, sin sombras.
+    val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(26, 29, 33) }
+    val labelBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        setShadowLayer(5f, 0f, 2f, Color.argb(70, 0, 0, 0))
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
     }
     val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(23, 50, 77)
-        textSize = 27f
+        color = Color.WHITE
+        textSize = 25f
         textAlign = Paint.Align.CENTER
         typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
     }
-    val displayName = ellipsizeForPaint(store.name, textPaint, width - 30f)
-    canvas.drawRoundRect(8f, 5f, width - 8f, 48f, 18f, 18f, labelPaint)
+    val displayName = ellipsizeForPaint(store.name, textPaint, width - 44f)
+    val labelWidth = (textPaint.measureText(displayName) + 30f).coerceAtMost(width - 8f)
+    val labelLeft = (width - labelWidth) / 2f
+    canvas.drawRoundRect(labelLeft, 6f, labelLeft + labelWidth, 46f, 10f, 10f, labelPaint)
+    canvas.drawRoundRect(labelLeft, 6f, labelLeft + labelWidth, 46f, 10f, 10f, labelBorder)
     canvas.drawText(displayName, width / 2f, 35f, textPaint)
 
-    val marker = loadStoreMarkerBitmap(context, store.state)
     val markerTop = if (badge == null) 53 else 76
     val markerLeft = (width - 84) / 2
     canvas.drawBitmap(marker, null, android.graphics.Rect(markerLeft, markerTop, markerLeft + 84, markerTop + 96), null)
 
     if (badge != null) {
-        val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(183, 28, 28) }
+        val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (store.moneyDue > 0) Color.rgb(180, 35, 24) else Color.rgb(167, 90, 0) }
         val badgeText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             textSize = 22f
             textAlign = Paint.Align.CENTER
             typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
         }
-        canvas.drawRoundRect(44f, 52f, width - 44f, 82f, 15f, 15f, badgePaint)
-        canvas.drawText(ellipsizeForPaint(badge, badgeText, width - 100f), width / 2f, 75f, badgeText)
+        canvas.drawRoundRect(52f, 52f, width - 52f, 80f, 8f, 8f, badgePaint)
+        canvas.drawText(ellipsizeForPaint(badge, badgeText, width - 116f), width / 2f, 74f, badgeText)
     }
     return bitmap
 }
@@ -570,17 +656,32 @@ private fun enableCaudalLocation(
     map: MapLibreMap,
     style: org.maplibre.android.maps.Style,
     intervalMillis: Long,
+    shareRouteGps: Boolean,
 ) {
     val location = map.locationComponent
     if (!location.isLocationComponentActivated) {
         val request = LocationEngineRequest.Builder(intervalMillis)
             .setFastestInterval(intervalMillis)
-            .setPriority(LocationEngineRequest.PRIORITY_HIGH_ACCURACY)
+            // Con ruta activa el servicio ya enciende el GPS: el mapa solo escucha esas lecturas (proveedor pasivo)
+            // en vez de pedir un segundo GPS que gasta batería.
+            .setPriority(if (shareRouteGps) LocationEngineRequest.PRIORITY_NO_POWER else LocationEngineRequest.PRIORITY_HIGH_ACCURACY)
             .build()
         location.activateLocationComponent(
             LocationComponentActivationOptions.builder(context, style)
                 .useDefaultLocationEngine(true)
                 .locationEngineRequest(request)
+                .locationComponentOptions(
+                    LocationComponentOptions.builder(context)
+                        .gpsDrawable(R.drawable.ic_caudal_truck)
+                        .foregroundDrawable(R.drawable.ic_caudal_truck)
+                        .foregroundDrawableStale(R.drawable.ic_caudal_truck)
+                        // Sin tinte: si no, MapLibre pinta el camión de un solo color.
+                        .foregroundTintColor(null)
+                        .bearingDrawable(R.drawable.ic_caudal_truck)
+                        .accuracyAlpha(.12f)
+                        .elevation(0f)
+                        .build(),
+                )
                 .build(),
         )
     }
@@ -595,13 +696,15 @@ private fun safelyEnableCaudalLocation(
     style: org.maplibre.android.maps.Style,
     controller: CaudalMapController,
     gpsIntervalSeconds: Int,
+    shareRouteGps: Boolean,
 ) {
     try {
-        enableCaudalLocation(context, map, style, gpsIntervalSeconds.coerceIn(1, 10) * 1_000L)
+        enableCaudalLocation(context, map, style, gpsIntervalSeconds.coerceIn(1, 10) * 1_000L, shareRouteGps)
         controller.restoreCameraMode()
     } catch (error: Throwable) {
         // MapLibre executes this callback from JNI. Letting a Java exception escape here
         // aborts the complete Android process instead of producing a normal crash report.
         Log.e(CAUDAL_MAP_LOG_TAG, "No se pudo activar la capa de ubicación", error)
+        DiagnosticReporter.logError("Mapa: activar capa de ubicación", error)
     }
 }

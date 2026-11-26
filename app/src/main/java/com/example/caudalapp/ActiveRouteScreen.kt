@@ -6,6 +6,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.draw.scale
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.BorderStroke
@@ -16,6 +23,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,6 +37,28 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.OutlinedButton
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,6 +80,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -54,6 +88,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import com.example.caudalapp.domain.AccountSettlementPolicy
 import com.example.caudalapp.domain.ActiveRoute
 import com.example.caudalapp.domain.GeoPoint
 import com.example.caudalapp.domain.Store
@@ -101,12 +136,10 @@ fun ActiveRouteScreen(
     var kennethTransferOpen by remember { mutableStateOf(false) }
     var accountsOpen by remember { mutableStateOf(false) }
     var startReminderShown by rememberSaveable(route.startedAtEpochMillis) { mutableStateOf(false) }
+    var pendingNoticeVisible by remember { mutableStateOf(false) }
     var auditOpen by remember { mutableStateOf(false) }
     var focusLocation by remember { mutableStateOf<GeoPoint?>(null) }
     var focusRequestId by remember { mutableIntStateOf(0) }
-    var elapsedMillis by remember(route.startedAtEpochMillis) {
-        mutableLongStateOf((System.currentTimeMillis() - route.startedAtEpochMillis).coerceAtLeast(0L))
-    }
     val haptics = LocalHapticFeedback.current
     val context = LocalContext.current.applicationContext
     val elapsedRouteId = remember(route.startedAtEpochMillis) {
@@ -115,13 +148,12 @@ fun ActiveRouteScreen(
     val historicalSales = remember(previousRoutes, ledgerRevision) {
         previousRoutes.flatMap(CompletedRouteRecord::sales) + route.ledger.sales
     }
+    val daysSinceLastSaleByStore = remember(historicalSales) { StoreMarkerPolicy.daysSinceLastSaleByStore(historicalSales) }
 
-    LaunchedEffect(route.startedAtEpochMillis) {
-        RouteTrackingService.ensureElapsedClock(context, elapsedRouteId)
-        while (true) {
-            elapsedMillis = RouteTrackingService.elapsedMillis(context, elapsedRouteId)
-            delay(1_000L)
-        }
+    // Atrás cierra primero lo que está abierto sobre el mapa.
+    BackHandler(enabled = panelExpanded || actionMenuOpen) {
+        actionMenuOpen = false
+        panelExpanded = false
     }
 
     LaunchedEffect(closeRequested) {
@@ -139,9 +171,12 @@ fun ActiveRouteScreen(
     }
 
     LaunchedEffect(route.startedAtEpochMillis) {
-        if (!startReminderShown && route.ledger.outstandingAccountStates().isNotEmpty()) {
+        // Aviso discreto en vez de abrir la lista encima del mapa al empezar.
+        if (!startReminderShown && route.ledger.outstandingAccountStates().any(AccountSettlementPolicy::hasPending)) {
             startReminderShown = true
-            accountsOpen = true
+            pendingNoticeVisible = true
+            delay(12_000)
+            pendingNoticeVisible = false
         }
     }
 
@@ -371,10 +406,10 @@ fun ActiveRouteScreen(
             markerState = { store ->
                 StoreMarkerPolicy.resolve(
                     route.ledger.storeAccount(store.id),
-                    daysSinceLastSale = StoreMarkerPolicy.daysSinceLastSale(store.id, historicalSales),
+                    daysSinceLastSale = daysSinceLastSaleByStore[store.id],
                 )
             },
-            moneyDue = { store -> route.ledger.storeAccount(store.id).moneyDue },
+            moneyDue = { store -> route.ledger.storeAccount(store.id).totalOwed },
             unitsPending = { store ->
                 route.ledger.products().sumOf { route.ledger.storeAccount(store.id).unitsPending(it.id) }
             },
@@ -383,7 +418,9 @@ fun ActiveRouteScreen(
             onLocationPermissionGranted = onLocationPermissionGranted,
             automaticFollow = settings.automaticMapFollow,
             gpsIntervalSeconds = settings.gpsIntervalSeconds,
+            shareRouteGps = true,
             mapStyle = settings.mapStyle,
+            trailKey = route.startedAtEpochMillis,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -394,32 +431,41 @@ fun ActiveRouteScreen(
         ) {
             Card(
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = .94f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
             ) {
                 Column(modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp)) {
                     Text(route.name, fontWeight = FontWeight.Bold)
-                    Text(
-                        formatRouteDuration(elapsedMillis),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    RouteClock(route.startedAtEpochMillis)
+                }
+            }
+            Box(modifier = Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                TopNoticeVisibility(visible = pendingNoticeVisible) {
+                    val pendingAccounts = remember(ledgerRevision) { route.ledger.outstandingAccountStates().filter(AccountSettlementPolicy::hasPending) }
+                    PendingAccountsNotice(
+                        count = pendingAccounts.size,
+                        moneyDue = pendingAccounts.sumOf(AccountSettlementPolicy::moneyDue),
+                        onOpen = {
+                            pendingNoticeVisible = false
+                            accountsOpen = true
+                        },
+                        onDismiss = { pendingNoticeVisible = false },
                     )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { closeOpen = true }) {
-                    Text("Finalizar", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                }
-                Button(onClick = onExitMap) {
-                    Text("Salir del mapa", fontWeight = FontWeight.Bold)
-                }
+            Button(onClick = onExitMap) {
+                Icon(Icons.Default.Menu, contentDescription = null)
+                Text("Menú", modifier = Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold)
             }
         }
 
+        // Fuera del key(): si no, el panel se recrea en cada venta y el número no tiene de dónde animar.
+        val shownCash by animateIntAsState(route.ledger.cashOnHand, tween(600), label = "cashOnHand")
         if (!placingStore && landscape) {
             key(ledgerRevision) {
                 RouteSummaryPanel(
                     route = route,
-                    elapsedMillis = elapsedMillis,
+                    cashOnHand = shownCash,
                     landscape = true,
                     expanded = panelExpanded,
                     onToggle = { panelExpanded = !panelExpanded },
@@ -436,13 +482,14 @@ fun ActiveRouteScreen(
             key(ledgerRevision) {
                 RouteSummaryPanel(
                     route = route,
-                    elapsedMillis = elapsedMillis,
+                    cashOnHand = shownCash,
                     landscape = false,
                     expanded = panelExpanded,
                     onToggle = { panelExpanded = !panelExpanded },
                     onAccountsClick = { accountsOpen = true },
                     onAuditClick = { auditOpen = true },
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                    modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 620.dp).fillMaxWidth()
+                        .heightIn(max = if (panelExpanded) 460.dp else 72.dp),
                 )
             }
         }
@@ -459,24 +506,24 @@ fun ActiveRouteScreen(
             exit = fadeOut() + slideOutVertically { it / 2 },
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                RouteActionButton("Venta rápida") {
+                RouteActionButton(Icons.Default.ShoppingCart, "Venta rápida") {
                     actionMenuOpen = false
                     quickSaleOpen = true
                 }
-                RouteActionButton("Agregar tienda") {
+                RouteActionButton(Icons.Default.Home, "Agregar tienda") {
                     actionMenuOpen = false
                     movingStore = null
                     placingStore = true
                 }
-                RouteActionButton("Recargar en sede") {
+                RouteActionButton(Icons.Default.Refresh, "Recargar en sede") {
                     actionMenuOpen = false
                     reloadOpen = true
                 }
-                RouteActionButton("Transferir a Kenneth") {
+                RouteActionButton(Icons.Default.Person, "Transferir a Kenneth") {
                     actionMenuOpen = false
                     kennethTransferOpen = true
                 }
-                RouteActionButton("Registrar gasto") {
+                RouteActionButton(Icons.Default.Edit, "Registrar gasto") {
                     actionMenuOpen = false
                     expenseOpen = true
                 }
@@ -485,7 +532,10 @@ fun ActiveRouteScreen(
 
         val rotation by animateFloatAsState(if (actionMenuOpen) 45f else 0f, label = "fabRotation")
         Button(
-            onClick = { actionMenuOpen = !actionMenuOpen },
+            onClick = {
+                actionMenuOpen = !actionMenuOpen
+                if (actionMenuOpen && landscape) panelExpanded = false
+            },
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(
@@ -497,7 +547,7 @@ fun ActiveRouteScreen(
             shape = CircleShape,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
         ) {
-            Text("+", fontSize = 30.sp)
+            Icon(Icons.Default.Add, contentDescription = "Acciones de ruta", modifier = Modifier.size(30.dp))
         }
 
         if (placingStore) {
@@ -524,7 +574,7 @@ fun ActiveRouteScreen(
                         }
                         placingStore = false
                     }) { Text(if (movingStore == null) "Usar este punto" else "Guardar ubicación") }
-                    Button(onClick = {
+                    OutlinedButton(onClick = {
                         placingStore = false
                         movingStore = null
                     }) { Text("Cancelar") }
@@ -532,22 +582,59 @@ fun ActiveRouteScreen(
             }
         }
 
-        feedback?.let { message ->
+        // Guarda el último mensaje para que la salida animada no se quede sin texto.
+        var lastFeedback by remember { mutableStateOf("") }
+        feedback?.let { lastFeedback = it }
+        AnimatedVisibility(
+            visible = feedback != null,
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 88.dp),
+            enter = fadeIn(tween(150)) + slideInVertically(tween(220)) { -it / 2 },
+            exit = fadeOut(tween(250)),
+        ) {
             Surface(
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 88.dp),
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.primary,
                 shadowElevation = 8.dp,
             ) {
-                Text(
-                    message,
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                )
+                Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val checkScale by transition.animateFloat(
+                        transitionSpec = { spring(dampingRatio = Spring.DampingRatioMediumBouncy) },
+                        label = "checkScale",
+                    ) { if (it == androidx.compose.animation.EnterExitState.Visible) 1f else .3f }
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.scale(checkScale),
+                    )
+                    Text(
+                        lastFeedback,
+                        modifier = Modifier.padding(start = 8.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
     }
+}
+
+@Composable
+private fun RouteClock(startedAtEpochMillis: Long) {
+    val context = LocalContext.current.applicationContext
+    val routeId = remember(startedAtEpochMillis) { RouteTrackingService.routeId(startedAtEpochMillis) }
+    var elapsedMillis by remember(startedAtEpochMillis) {
+        mutableLongStateOf((System.currentTimeMillis() - startedAtEpochMillis).coerceAtLeast(0L))
+    }
+    // Aislado para que el tic de cada segundo no recomponga el mapa ni los marcadores.
+    LaunchedEffect(startedAtEpochMillis) {
+        RouteTrackingService.ensureElapsedClock(context, routeId)
+        while (true) {
+            elapsedMillis = RouteTrackingService.elapsedMillis(context, routeId)
+            delay(1_000L)
+        }
+    }
+    Text(formatRouteDuration(elapsedMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 private fun formatRouteDuration(milliseconds: Long): String {
@@ -559,16 +646,17 @@ private fun formatRouteDuration(milliseconds: Long): String {
 }
 
 @Composable
-private fun RouteActionButton(label: String, onClick: () -> Unit) {
-    Button(onClick = onClick, shape = RoundedCornerShape(16.dp)) {
-        Text(label, modifier = Modifier.padding(vertical = 2.dp))
+private fun RouteActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Button(onClick = onClick, modifier = Modifier.width(250.dp), shape = RoundedCornerShape(16.dp)) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Text(label, modifier = Modifier.weight(1f).padding(start = 12.dp, top = 2.dp, bottom = 2.dp))
     }
 }
 
 @Composable
 private fun RouteSummaryPanel(
     route: ActiveRoute,
-    elapsedMillis: Long,
+    cashOnHand: Int,
     landscape: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
@@ -594,14 +682,15 @@ private fun RouteSummaryPanel(
                 onDrag = { change, amount -> change.consume(); drag += amount },
             )
         },
-        shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = .94f)),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .94f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         if (!expanded) {
             Box(
-                modifier = Modifier.fillMaxSize().clickable(onClick = onToggle).padding(6.dp),
+                // En vertical la tarjeta no tiene alto fijo: fillMaxSize la estiraba a toda la pantalla aun cerrada.
+                modifier = (if (landscape) Modifier.fillMaxSize() else Modifier.fillMaxWidth()).clickable(onClick = onToggle).padding(6.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 if (landscape) {
@@ -610,39 +699,140 @@ private fun RouteSummaryPanel(
                         Text("Ruta", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                     }
                 } else {
-                    Text("Ruta e inventario ▲", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Q$cashOnHand", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                        Text(
+                            route.ledger.products().filterNot { it.archived }
+                                .joinToString("  ·  ") { "${it.name} ${route.ledger.displayStock(it.id)}" },
+                            modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Mostrar ruta e inventario", tint = MaterialTheme.colorScheme.primary)
+                    }
                 }
             }
         } else {
-          Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            AnimatedVisibility(visible = true) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(route.name, fontWeight = FontWeight.Bold)
-                    Text(formatRouteDuration(elapsedMillis), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Efectivo", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Q${route.ledger.cashOnHand}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(route.name, fontWeight = FontWeight.Bold)
+                        RouteClock(route.startedAtEpochMillis)
                     }
-                    route.ledger.products().filterNot { it.archived }.forEach { product ->
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(product.name)
-                            Text(route.ledger.displayStock(product.id).toString(), fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    TextButton(onClick = onAccountsClick, modifier = Modifier.fillMaxWidth()) {
-                        Text("Cuentas pendientes →", fontWeight = FontWeight.SemiBold)
-                    }
-                    TextButton(onClick = onAuditClick, modifier = Modifier.fillMaxWidth()) {
-                        Text("Movimientos (${route.ledger.auditEntries.size}) →", fontWeight = FontWeight.SemiBold)
+                    IconButton(onClick = onToggle) {
+                        Icon(
+                            if (landscape) Icons.Default.KeyboardArrowRight else Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Ocultar panel",
+                        )
                     }
                 }
-            }
-            TextButton(onClick = onToggle, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    if (landscape) "Ocultar ›" else "Ocultar ▼",
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Efectivo esperado", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Q$cashOnHand", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Text("En el camión", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                route.ledger.products().filterNot { it.archived }.forEach { product ->
+                    val quantity = route.ledger.displayStock(product.id)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(product.name)
+                        Text(
+                            quantity.toString(),
+                            fontWeight = FontWeight.Bold,
+                            color = if (quantity < 0) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+                Spacer(Modifier.size(2.dp))
+                PanelActionButton(
+                    icon = Icons.Default.Warning,
+                    label = "Cuentas pendientes",
+                    badge = route.ledger.outstandingAccountStates().count(AccountSettlementPolicy::hasPending).takeIf { it > 0 }?.toString(),
+                    onClick = onAccountsClick,
+                )
+                PanelActionButton(
+                    icon = Icons.Default.List,
+                    label = "Movimientos",
+                    badge = route.ledger.auditEntries.size.takeIf { it > 0 }?.toString(),
+                    onClick = onAuditClick,
                 )
             }
-          }
+        }
+    }
+}
+
+@Composable
+private fun PanelActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    badge: String?,
+    onClick: () -> Unit,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Text(label, modifier = Modifier.weight(1f).padding(start = 10.dp), fontWeight = FontWeight.SemiBold)
+        badge?.let {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+                Text(
+                    it,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
+    }
+}
+
+// Fuera del Row: dentro, AnimatedVisibility toma la versión de RowScope y no compila.
+@Composable
+private fun TopNoticeVisibility(visible: Boolean, content: @Composable () -> Unit) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn() + slideInVertically { -it },
+        exit = fadeOut() + slideOutVertically { -it },
+    ) { content() }
+}
+
+@Composable
+private fun PendingAccountsNotice(count: Int, moneyDue: Int, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    Surface(
+        onClick = onOpen,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        shadowElevation = 5.dp,
+    ) {
+        Row(modifier = Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(18.dp))
+            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                Text(
+                    if (count == 1) "1 tienda con pendientes" else "$count tiendas con pendientes",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    if (moneyDue > 0) "Q$moneyDue por cobrar · toca para ver" else "Toca para ver",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, contentDescription = "Cerrar aviso", tint = MaterialTheme.colorScheme.onTertiaryContainer)
+            }
         }
     }
 }

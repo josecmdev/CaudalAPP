@@ -1,19 +1,26 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Reglas de copia de seguridad para Android 12 y posteriores.
+
+    cloud-backup: copia automática en la cuenta de Google de la tablet. Tiene un
+    límite de 25 MB por aplicación (si se pasa, no se guarda nada), así que solo
+    incluye los datos del negocio y los ajustes. Los recorridos GPS van en el
+    respaldo manual de Ajustes.
+
+    device-transfer: al pasar los datos de una tablet a otra (cable o Wi-Fi) no hay
+    límite de tamaño, así que también se copian los recorridos GPS.
+
+    Nunca se copian: mapas sin internet (se vuelven a descargar), registro de
+    cierres inesperados, archivos temporales ni el estado del GPS de una ruta activa.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <include domain="file" path="caudal-state-v1.json" />
+        <include domain="sharedpref" path="caudal-settings-v1.xml" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <include domain="file" path="caudal-state-v1.json" />
+        <include domain="file" path="route-tracks/" />
+        <include domain="sharedpref" path="caudal-settings-v1.xml" />
     </device-transfer>
-    -->
 </data-extraction-rules>

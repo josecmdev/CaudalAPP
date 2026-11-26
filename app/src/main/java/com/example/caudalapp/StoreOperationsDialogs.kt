@@ -1,16 +1,27 @@
 package com.example.caudalapp
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.AlertDialog
@@ -70,11 +81,15 @@ fun StoreDetailsDialog(
         title = { Text(store.name, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                AccountRow("Debe dinero", "Q${account.moneyDue}", account.moneyDue > 0)
-                AccountRow("Debe envases", containersDue.toString(), containersDue > 0)
-                AccountRow("Falta entregar", unitsPending.toString(), unitsPending > 0)
-                Button(onClick = onNewSale, modifier = Modifier.fillMaxWidth()) { Text("Nueva venta") }
-                if (account.moneyDue > 0) {
+                if (account.totalOwed == 0 && containersDue == 0 && unitsPending == 0) {
+                    Text("Al día: no debe nada", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    if (account.totalOwed > 0) AccountRow("Debe dinero", "Q${account.totalOwed}", true)
+                    if (containersDue > 0) AccountRow("Debe envases", containersDue.toString(), true)
+                    if (unitsPending > 0) AccountRow("Falta entregar", unitsPending.toString(), true)
+                }
+                Button(onClick = onNewSale, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("Nueva venta") }
+                if (account.totalOwed > 0) {
                     Button(onClick = onCollectDebt, modifier = Modifier.fillMaxWidth()) { Text("Registrar pago") }
                 }
                 if (containersDue > 0) {
@@ -85,8 +100,14 @@ fun StoreDetailsDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onMove) { Text("Mover ubicación") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
+        dismissButton = {
+            // Mover es raro y no debe competir con vender: va abajo como acción secundaria.
+            TextButton(onClick = onMove) {
+                Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("Mover ubicación", modifier = Modifier.padding(start = 6.dp))
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
     )
 }
 
@@ -122,6 +143,23 @@ fun StoreSaleDialog(
     var creditEnabled by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val cart = remember { mutableStateListOf<StoreSaleLineUi>() }
+    var submitted by remember { mutableStateOf(false) }
+    var confirmCancel by remember { mutableStateOf(false) }
+    val requestCancel = { if (cart.isEmpty() && quantityText.isEmpty()) onDismiss() else confirmCancel = true }
+    if (confirmCancel) {
+        AlertDialog(
+            onDismissRequest = { confirmCancel = false },
+            title = { Text("¿Seguro que quieres cancelar?", fontWeight = FontWeight.Bold) },
+            text = { Text("Se pierden los productos agregados a esta venta. No se registra nada.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmCancel = false
+                    onDismiss()
+                }) { Text("Sí, cancelar venta", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { Button(onClick = { confirmCancel = false }, shape = RoundedCornerShape(10.dp)) { Text("Seguir con la venta") } },
+        )
+    }
     val invoiceTotal = cart.sumOf(StoreSaleLineUi::total)
     val hasPotentialPending = cart
         .groupBy { it.product.id }
@@ -129,14 +167,20 @@ fun StoreSaleDialog(
             lines.sumOf(StoreSaleLineUi::requested) > route.ledger.availableStock(productId).coerceAtLeast(0)
         }
 
-    AlertDialog(
-        onDismissRequest = {},
-        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-        shape = RoundedCornerShape(26.dp),
-        title = { Text("Venta · ${store.name}", fontWeight = FontWeight.Bold) },
+    SidePanelDialog(
+        onDismissRequest = requestCancel,
+        title = {
+            Column {
+                Text("Nueva venta", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(store.name, fontWeight = FontWeight.Bold)
+            }
+        },
         text = {
+            // Deben leerse dentro del Dialog: afuera apuntan a la ventana de la actividad y el teclado no se cerraba.
+            val focusManager = LocalFocusManager.current
+            val keyboard = LocalSoftwareKeyboardController.current
             LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 540.dp),
+                modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
@@ -233,31 +277,67 @@ fun StoreSaleDialog(
                                 soldContainersText = ""
                                 sellingContainers = false
                                 error = null
+                                focusManager.clearFocus()
+                                keyboard?.hide()
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Agregar producto") }
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(),
+                    ) { Text("+ Agregar a la factura", fontWeight = FontWeight.SemiBold) }
+                }
+                if (cart.isNotEmpty()) {
+                    item {
+                        Text(
+                            "FACTURA",
+                            modifier = Modifier.padding(top = 8.dp),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(top = 4.dp), color = MaterialTheme.colorScheme.outline)
+                    }
                 }
                 itemsIndexed(cart) { index, line ->
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("${line.requested} × ${line.product.name}")
-                        Row {
-                            Text("Q${line.total}", fontWeight = FontWeight.Bold)
-                            TextButton(onClick = { cart.removeAt(index) }) { Text("Quitar") }
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(line.product.name, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "${line.requested} ${if (line.requested == 1) "unidad" else "unidades"}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Text("Q${line.total}", fontWeight = FontWeight.Bold)
+                        IconButton(onClick = { cart.removeAt(index) }) {
+                            Icon(Icons.Default.Close, contentDescription = "Quitar ${line.product.name}")
                         }
                     }
                 }
                 if (cart.isNotEmpty()) {
                     item {
-                        Text("Total: Q$invoiceTotal", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, end = 48.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text("Total", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                "Q$invoiceTotal",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         if (hasPotentialPending) {
                             Text(
-                                "Falta inventario: esta factura se cobrará al completar la entrega.",
+                                "Lo que no hay en el camión queda por entregar: el inventario se verá en negativo " +
+                                    "y se descuenta al recargar en sede.",
                                 modifier = Modifier.padding(top = 7.dp),
-                                color = MaterialTheme.colorScheme.error,
+                                color = MaterialTheme.colorScheme.tertiary,
                                 fontWeight = FontWeight.SemiBold,
                             )
-                        } else {
+                        }
+                        run {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -293,8 +373,9 @@ fun StoreSaleDialog(
         },
         confirmButton = {
             Button(
-                enabled = cart.isNotEmpty(),
+                enabled = cart.isNotEmpty() && !submitted,
                 onClick = {
+                    if (submitted) return@Button
                     val remainingStock = products.associate { product ->
                         product.id to route.ledger.availableStock(product.id).coerceAtLeast(0)
                     }.toMutableMap()
@@ -321,22 +402,26 @@ fun StoreSaleDialog(
                     when {
                         received > invoiceTotal -> error = "El efectivo no puede superar Q$invoiceTotal"
                         else -> {
+                            submitted = true
                             route.ledger.registerStoreSale(store.id, lines, received, location = store.location)
                             onRegistered(lines.sumOf(SaleLine::delivered), received, pending)
                         }
                     }
                 },
-            ) { Text("Registrar venta") }
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.height(52.dp),
+            ) { Text("Registrar venta", fontWeight = FontWeight.Bold) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClick = requestCancel) { Text("Cancelar") } },
     )
 }
 
 @Composable
 fun CollectDebtDialog(route: ActiveRoute, store: Store, onDismiss: () -> Unit, onCollected: (Int) -> Unit) {
-    val due = route.ledger.storeAccount(store.id).moneyDue
+    val due = route.ledger.storeAccount(store.id).totalOwed
     var amount by remember { mutableStateOf(due.toString()) }
     var error by remember { mutableStateOf(false) }
+    var submitted by remember { mutableStateOf(false) }
     SimpleAmountDialog(
         title = "Cobrar a ${store.name}",
         description = "Saldo pendiente: Q$due",
@@ -347,7 +432,9 @@ fun CollectDebtDialog(route: ActiveRoute, store: Store, onDismiss: () -> Unit, o
         onDismiss = onDismiss,
         onConfirm = {
             val value = amount.toIntOrNull() ?: 0
+            if (submitted) return@SimpleAmountDialog
             if (value !in 1..due) error = true else {
+                submitted = true
                 route.ledger.collectDebt(store.id, value)
                 onCollected(value)
             }
@@ -452,6 +539,14 @@ fun CompleteDeliveryDialog(route: ActiveRoute, store: Store, onDismiss: () -> Un
                     "Cantidad entregada",
                     Modifier.fillMaxWidth(),
                 )
+                val inTruck = route.ledger.availableStock(product.id)
+                if ((units.toIntOrNull() ?: 0) > inTruck) {
+                    Text(
+                        "Hay ${inTruck.coerceAtLeast(0)} ${product.name} en el camión; el inventario quedará en negativo hasta recargar.",
+                        color = MaterialTheme.colorScheme.tertiary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 WholeNumberField(
                     amount,
                     {

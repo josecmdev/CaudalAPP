@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -59,8 +59,8 @@ fun PendingAccountsDialog(
     onDismiss: () -> Unit,
     onSelectStore: (Store) -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = {},
+    SidePanelDialog(
+        onDismissRequest = onDismiss,
         title = { Text("Cuentas pendientes", fontWeight = FontWeight.Bold) },
         text = {
             AccountsList(
@@ -68,10 +68,10 @@ fun PendingAccountsDialog(
                 accounts = accounts,
                 productName = productName,
                 onSelectStore = onSelectStore,
-                modifier = Modifier.fillMaxWidth(),
             )
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
+        confirmButton = { Button(onClick = onDismiss) { Text("Cerrar") } },
+        dismissButton = {},
     )
 }
 
@@ -93,8 +93,23 @@ private fun AccountsList(
             Text("Deudas, envases y entregas aparecerán aquí", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     } else {
+        val sorted = accounts.sortedByDescending(::accountMoney)
         LazyColumn(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(accounts, key = StoreAccountState::storeId) { account ->
+            item {
+                val deliveries = accounts.sumOf { it.pendingDeliveries.values.sum() }
+                val containers = accounts.sumOf { it.pendingContainers.values.sum() }
+                Text(
+                    listOfNotNull(
+                        if (accounts.size == 1) "1 tienda" else "${accounts.size} tiendas",
+                        "Q${accounts.sumOf(::accountMoney)} por cobrar",
+                        deliveries.takeIf { it > 0 }?.let { "$it por entregar" },
+                        containers.takeIf { it > 0 }?.let { "$it envases" },
+                    ).joinToString(" · "),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            items(sorted, key = StoreAccountState::storeId) { account ->
                 val store = stores.get(account.storeId)
                 PendingAccountCard(
                     storeName = store?.name ?: "Tienda archivada",
@@ -124,7 +139,7 @@ private fun PendingAccountCard(
         Column(modifier = Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(storeName, fontWeight = FontWeight.Bold)
-                val money = account.debts.sumOf { it.remainingAmount } + account.pendingPayments.values.sum()
+                val money = accountMoney(account)
                 if (money > 0) Text("Q$money", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
             }
             account.pendingDeliveries.filterValues { it > 0 }.forEach { (productId, quantity) ->
@@ -137,5 +152,8 @@ private fun PendingAccountCard(
         }
     }
 }
+
+private fun accountMoney(account: StoreAccountState): Int =
+    account.debts.sumOf { it.remainingAmount } + account.pendingPayments.values.sum()
 
 private fun defaultProductName(productId: String): String = ProductCatalog.find(productId)?.name ?: productId

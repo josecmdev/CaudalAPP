@@ -15,11 +15,14 @@ import com.example.caudalapp.domain.ExpenseCategory
 import com.example.caudalapp.domain.StoreAccountAdjustment
 import com.example.caudalapp.domain.StoreAccountAdjustmentType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 class CaudalStateStoreTest {
     @get:Rule
@@ -57,6 +60,7 @@ class CaudalStateStoreTest {
             activeDurationMillis = 180_000L,
             countedCash = 250,
             countedStock = mapOf(bags.id to 12),
+            archived = true,
         )
         val products = ProductDirectory()
         products.addProduct("Refresco", 12, false, "content://refresco")
@@ -98,9 +102,24 @@ class CaudalStateStoreTest {
         assertEquals(1, decoded.completedRoutes.single().sales.size)
         assertEquals(180_000L, decoded.completedRoutes.single().activeDurationMillis)
         assertEquals(250, decoded.completedRoutes.single().countedCash)
+        assertEquals(true, decoded.completedRoutes.single().archived)
         assertNotNull(decoded.products.allProducts().firstOrNull { it.name == "Refresco" })
         assertEquals(3, decoded.outstandingAccounts.single().pendingDeliveries.getValue(bags.id))
         assertEquals(25, decoded.accountAdjustments.single().amount)
+    }
+
+    @Test
+    fun `una ruta con inventario negativo se guarda y se vuelve a abrir`() {
+        val bags = ProductCatalog.BAGS
+        val ledger = RouteLedger.start(initialCash = 0, initialStock = mapOf(bags to 2))
+        ledger.tryRegisterQuickSale(listOf(SaleLine(bags, requested = 5, delivered = 5, total = 25)), amountReceived = 25)
+        val store = CaudalStateStore(temporaryFolder.newFile("negativo.json"))
+
+        store.save(CaudalRestoredState(ActiveRoute("Lunes", ledger, 1L), StoreDirectory(), emptyList()))
+        val restored = store.load()?.activeRoute?.ledger
+
+        assertEquals(-3, restored?.availableStock(bags.id))
+        assertEquals(25, restored?.cashOnHand)
     }
 
     @Test
@@ -114,5 +133,154 @@ class CaudalStateStoreTest {
 
         file.writeText("no-es-json")
         assertNull(store.load())
+    }
+
+    @Test
+    fun `un archivo ilegible se aparta con su contenido y el siguiente guardado no lo sobrescribe`() {
+        val folder = temporaryFolder.newFolder("data")
+        val file = File(folder, "caudal-state-v1.json")
+        file.writeText("{\"schemaVersion\":1,\"stores\":[{\"id\":")
+        val store = CaudalStateStore(file, clock = { 42L })
+
+        assertNull(store.load())
+
+        val setAside = File(folder, "caudal-state-v1.json.unreadable-42")
+        assertEquals(setAside, store.lastSetAsideFile)
+        assertEquals("{\"schemaVersion\":1,\"stores\":[{\"id\":", setAside.readText())
+        assertFalse(file.exists())
+
+        store.save(namedState("Tienda Nueva"))
+
+        assertEquals("{\"schemaVersion\":1,\"stores\":[{\"id\":", setAside.readText())
+        assertEquals("Tienda Nueva", store.load()?.stores?.allStores()?.single()?.name)
+        assertNull(store.lastSetAsideFile)
+    }
+
+    @Test
+    fun `una version de datos desconocida tambien se aparta en lugar de perderse`() {
+        val folder = temporaryFolder.newFolder("data")
+        val file = File(folder, "caudal-state-v1.json")
+        file.writeText("{\"schemaVersion\":2}")
+        val store = CaudalStateStore(file, clock = { 7L })
+
+        assertNull(store.load())
+
+        assertEquals("{\"schemaVersion\":2}", File(folder, "caudal-state-v1.json.unreadable-7").readText())
+    }
+
+    @Test
+    fun `sin archivo no se aparta nada`() {
+        val store = CaudalStateStore(File(temporaryFolder.newFolder("data"), "caudal-state-v1.json"))
+
+        assertNull(store.load())
+        assertNull(store.lastSetAsideFile)
+    }
+
+    @Test
+    fun `guardar reemplaza el archivo anterior y no deja temporales`() {
+        val folder = temporaryFolder.newFolder("data")
+        val file = File(folder, "caudal-state-v1.json")
+        val store = CaudalStateStore(file)
+
+        store.save(namedState("Primera"))
+        store.save(namedState("Segunda"))
+
+        assertEquals("Segunda", store.load()?.stores?.allStores()?.single()?.name)
+        assertEquals(listOf("caudal-state-v1.json"), folder.list()?.toList())
+    }
+
+    @Test
+    fun `un temporal viejo de un guardado interrumpido no afecta la carga`() {
+        val folder = temporaryFolder.newFolder("data")
+        val file = File(folder, "caudal-state-v1.json")
+        val store = CaudalStateStore(file)
+        store.save(namedState("Guardada"))
+        File(folder, "caudal-state-v1.json.tmp").writeText("{\"schemaVersion\":1,\"sto")
+
+        assertEquals("Guardada", store.load()?.stores?.allStores()?.single()?.name)
+
+        store.save(namedState("Siguiente"))
+        assertEquals("Siguiente", store.load()?.stores?.allStores()?.single()?.name)
+    }
+
+    @Test
+    fun `si escribir el temporal falla el archivo guardado queda intacto`() {
+        val folder = temporaryFolder.newFolder("data")
+        val file = File(folder, "caudal-state-v1.json")
+        val store = CaudalStateStore(file)
+        store.save(namedState("Intacta"))
+        val before = file.readText()
+        // Un directorio en la ruta del temporal hace que la escritura falle.
+        File(folder, "caudal-state-v1.json.tmp").mkdir()
+
+        val failure = runCatching { store.save(namedState("Nunca")) }.exceptionOrNull()
+
+        assertNotNull(failure)
+        assertEquals(before, file.readText())
+        assertEquals("Intacta", store.load()?.stores?.allStores()?.single()?.name)
+    }
+
+    @Test
+    fun `se recupera el archivo anterior si un guardado de respaldo se interrumpio`() {
+        val folder = temporaryFolder.newFolder("data")
+        val file = File(folder, "caudal-state-v1.json")
+        val store = CaudalStateStore(file)
+        store.save(namedState("Anterior"))
+        assertTrue(file.renameTo(File(folder, "caudal-state-v1.json.previous")))
+
+        assertEquals("Anterior", store.load()?.stores?.allStores()?.single()?.name)
+        assertTrue(file.exists())
+    }
+
+    @Test
+    fun `el historial se guarda aparte y el archivo principal queda chico`() {
+        val folder = temporaryFolder.newFolder("split")
+        val file = File(folder, "caudal-state-v1.json")
+        val store = CaudalStateStore(file)
+        val state = namedState("Lupita").copy(completedRoutes = listOf(route("Lunes")))
+
+        store.save(state)
+
+        assertTrue(File(folder, "caudal-state-v1-history.json").exists())
+        assertTrue(CaudalStateCodec.decode(file.readText()).completedRoutes.isEmpty())
+        assertEquals("Lunes", CaudalStateStore(file).load()?.completedRoutes?.single()?.routeName)
+    }
+
+    @Test
+    fun `un archivo del formato anterior conserva su historial y se migra al guardar`() {
+        val folder = temporaryFolder.newFolder("legacy")
+        val file = File(folder, "caudal-state-v1.json")
+        file.writeText(CaudalStateCodec.encode(namedState("Lupita").copy(completedRoutes = listOf(route("Martes")))))
+        val store = CaudalStateStore(file)
+
+        val loaded = requireNotNull(store.load())
+        store.save(loaded)
+
+        assertEquals("Martes", loaded.completedRoutes.single().routeName)
+        assertEquals("Martes", CaudalStateStore(file).load()?.completedRoutes?.single()?.routeName)
+        assertTrue(CaudalStateCodec.decode(file.readText()).completedRoutes.isEmpty())
+    }
+
+    @Test
+    fun `restaurar un estado sin historial borra el historial anterior`() {
+        val file = File(temporaryFolder.newFolder("restore"), "caudal-state-v1.json")
+        CaudalStateStore(file).save(namedState("Lupita").copy(completedRoutes = listOf(route("Lunes"))))
+
+        CaudalStateStore(file).save(namedState("Lupita"))
+
+        assertTrue(CaudalStateStore(file).load()?.completedRoutes?.isEmpty() == true)
+    }
+
+    private fun route(name: String) = CompletedRouteRecord(
+        name,
+        1L,
+        2L,
+        RouteLedger.start(0, emptyMap()).closeSummary(),
+    )
+
+    private fun namedState(storeName: String): CaudalRestoredState {
+        val stores = StoreDirectory { "store-1" }
+        stores.addStore(storeName, GeoPoint(14.6, -90.5))
+        return CaudalRestoredState(activeRoute = null, stores = stores, completedRoutes = emptyList())
     }
 }

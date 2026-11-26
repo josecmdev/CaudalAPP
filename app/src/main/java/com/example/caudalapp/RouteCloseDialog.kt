@@ -24,7 +24,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -48,6 +47,7 @@ fun RouteCloseDialog(
     var countPhysical by remember { mutableStateOf(false) }
     var cashText by remember { mutableStateOf("") }
     var discardConfirmation by remember { mutableStateOf(false) }
+    var finishing by remember { mutableStateOf(false) }
     val stock = remember {
         mutableStateMapOf<String, String>().apply {
             route.ledger.products().filterNot { it.archived }.forEach { put(it.id, "") }
@@ -56,12 +56,12 @@ fun RouteCloseDialog(
     if (discardConfirmation) {
         AlertDialog(
             onDismissRequest = { discardConfirmation = false },
-            title = { Text("¿Salir sin guardar?", fontWeight = FontWeight.Bold) },
+            title = { Text("¿Eliminar esta ruta?", fontWeight = FontWeight.Bold) },
             text = {
                 Text("Se eliminarán ventas, gastos, recargas, transferencias, deudas nuevas y el recorrido GPS de esta ruta. Esta acción no se puede deshacer.")
             },
             confirmButton = {
-                Button(onClick = onDiscard) { Text("Eliminar ruta") }
+                Button(enabled = !finishing, onClick = { finishing = true; onDiscard() }) { Text("Eliminar ruta") }
             },
             dismissButton = {
                 TextButton(onClick = { discardConfirmation = false }) { Text("Cancelar") }
@@ -87,7 +87,7 @@ fun RouteCloseDialog(
 
                 if (summary.hasWarnings) {
                     Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Pendientes que continuarán abiertos", color = Color(0xFFC45A00), fontWeight = FontWeight.Bold)
+                        Text("Pendientes que continuarán abiertos", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
                         if (summary.pendingDeliveryUnits > 0) Text("• ${summary.pendingDeliveryUnits} productos por entregar")
                         if (summary.pendingContainers > 0) Text("• ${summary.pendingContainers} envases por recibir")
                         summary.negativeStock.forEach { (name, quantity) -> Text("• $name: $quantity") }
@@ -130,13 +130,15 @@ fun RouteCloseDialog(
             }
         },
         confirmButton = {
-            Button(onClick = {
+            Button(enabled = !finishing, onClick = {
+                if (finishing) return@Button
+                finishing = true
                 onFinish(
                     RouteCloseResult(
                         summary = summary,
                         countedCash = cashText.toIntOrNull().takeIf { countPhysical },
                         countedStock = if (countPhysical) {
-                            stock.mapValues { it.value.toIntOrNull() ?: 0 }
+                            stock.mapNotNull { (id, value) -> value.toIntOrNull()?.let { id to it } }.toMap()
                         } else {
                             emptyMap()
                         },
@@ -147,7 +149,7 @@ fun RouteCloseDialog(
         dismissButton = {
             Row {
                 TextButton(onClick = { discardConfirmation = true }) {
-                    Text("Salir sin guardar", color = MaterialTheme.colorScheme.error)
+                    Text("Eliminar ruta", color = MaterialTheme.colorScheme.error)
                 }
                 TextButton(onClick = onDismiss) { Text("Seguir en ruta") }
             }

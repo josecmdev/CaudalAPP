@@ -120,12 +120,10 @@ private class CarStoresScreen(
             .take(2)
             .ifBlank { "T" }
 
+    // Sin segundos: las plantillas del carro no se refrescan solas y un reloj congelado confunde.
     private fun formatCarDuration(milliseconds: Long): String {
-        val totalSeconds = milliseconds.coerceAtLeast(0L) / 1_000L
-        val hours = totalSeconds / 3_600L
-        val minutes = totalSeconds % 3_600L / 60L
-        val seconds = totalSeconds % 60L
-        return "%02d:%02d:%02d".format(hours, minutes, seconds)
+        val totalMinutes = milliseconds.coerceAtLeast(0L) / 60_000L
+        return "%d h %02d min".format(totalMinutes / 60L, totalMinutes % 60L)
     }
 }
 

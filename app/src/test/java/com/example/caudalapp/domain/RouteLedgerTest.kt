@@ -34,6 +34,26 @@ class RouteLedgerTest {
     }
 
     @Test
+    fun `vender mas de lo cargado queda en negativo y la recarga lo descuenta`() {
+        val ledger = RouteLedger.start(initialCash = 150, initialStock = mapOf(bolsas to 10))
+
+        ledger.registerStoreSale(
+            storeId = "no-asfaltado",
+            lines = listOf(SaleLine(product = bolsas, requested = 18, delivered = 10, total = 50)),
+            amountReceived = 0,
+        )
+        assertEquals(-8, ledger.displayStock(bolsas.id))
+
+        ledger.restock(mapOf(bolsas to 150))
+        assertEquals(142, ledger.displayStock(bolsas.id))
+
+        ledger.completeDelivery("no-asfaltado", bolsas.id, units = 8, amountReceived = 50)
+        assertEquals(142, ledger.displayStock(bolsas.id))
+        assertEquals(142, ledger.availableStock(bolsas.id))
+        assertEquals(200, ledger.cashOnHand)
+    }
+
+    @Test
     fun `una entrega incompleta se ve negativa hasta completarla`() {
         val ledger = RouteLedger.start(
             initialCash = 0,
@@ -297,6 +317,34 @@ class RouteLedgerTest {
         )
 
         assertEquals(2, days)
+        assertEquals(
+            mapOf("store-color" to 2),
+            StoreMarkerPolicy.daysSinceLastSaleByStore(listOf(recent, cancelled), nowEpochMillis = 10L * 86_400_000L),
+        )
+    }
+
+    @Test
+    fun `el pendiente de cobro cuenta como deuda igual en la ruta y fuera de ella`() {
+        val ledger = RouteLedger.start(0, mapOf(bolsas to 1))
+        ledger.registerStoreSale("store-m", listOf(SaleLine(bolsas, requested = 2, delivered = 1, total = 40)), amountReceived = 0)
+        val inRoute = ledger.storeAccount("store-m")
+        val saved = ledger.outstandingAccountStates().single()
+
+        assertEquals(40, inRoute.totalOwed)
+        assertEquals(AccountSettlementPolicy.moneyDue(saved), inRoute.totalOwed)
+        assertEquals(StoreMarkerPolicy.resolve(inRoute, null), StoreMarkerPolicy.resolve(saved, null))
+        assertEquals(StoreMarkerState.INACTIVE, StoreMarkerPolicy.resolve(null as StoreAccountState?, null))
+    }
+
+    @Test
+    fun `el cobro de deuda tambien salda lo pendiente de una entrega incompleta`() {
+        val ledger = RouteLedger.start(0, mapOf(bolsas to 1))
+        ledger.registerStoreSale("store-p", listOf(SaleLine(bolsas, requested = 2, delivered = 1, total = 40)), amountReceived = 0)
+
+        ledger.collectDebt("store-p", 40)
+
+        assertEquals(40, ledger.cashOnHand)
+        assertEquals(0, ledger.storeAccount("store-p").paymentPending(bolsas.id))
     }
 
     @Test

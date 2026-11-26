@@ -52,6 +52,10 @@ data class StoreAccount(
     val moneyDue: Int
         get() = openDebts.sumOf { it.remainingAmount }
 
+    /** Todo el dinero que la tienda debe: deudas más cobros de entregas incompletas. Igual en todas las pantallas. */
+    val totalOwed: Int
+        get() = moneyDue + pendingPayments.values.sum()
+
     val hasPendingDelivery: Boolean
         get() = pendingDeliveries.values.any { it > 0 }
 
@@ -227,8 +231,6 @@ class RouteLedger private constructor(
 
     init {
         require(initialCash >= 0) { "El sencillo inicial no puede ser negativo" }
-        require(initialStock.values.all { it >= 0 }) { "El inventario inicial no puede ser negativo" }
-        require(initialEmptyContainers.values.all { it >= 0 }) { "Los envases iniciales no pueden ser negativos" }
     }
 
     fun registerStoreSale(
@@ -414,7 +416,7 @@ class RouteLedger private constructor(
     fun collectDebt(storeId: String, amount: Int) {
         require(amount > 0)
         val account = storeAccount(storeId)
-        require(amount <= account.moneyDue) { "El cobro no puede superar la deuda" }
+        require(amount <= account.moneyDue + account.pendingPayments.values.sum()) { "El cobro no puede superar la deuda" }
 
         var remainingPayment = amount
         account.openDebts.forEach { debt ->
@@ -424,6 +426,12 @@ class RouteLedger private constructor(
             remainingPayment -= applied
         }
         account.openDebts.removeAll { it.remainingAmount == 0 }
+        account.pendingPayments.keys.toList().forEach { productId ->
+            val applied = minOf(account.paymentPending(productId), remainingPayment)
+            remainingPayment -= applied
+            account.pendingPayments[productId] = account.paymentPending(productId) - applied
+        }
+        account.pendingPayments.values.removeAll { it == 0 }
         cashOnHand += amount
         cashCollected += amount
         auditLog += RouteAuditEntry(
@@ -543,6 +551,18 @@ class RouteLedger private constructor(
     fun importAccounts(savedAccounts: List<StoreAccountState>) {
         savedAccounts.forEach { saved ->
             accounts[saved.storeId] = saved.toAccount()
+        }
+    }
+
+    /** Cobros y entregas registrados desde Tiendas o Cuentas pendientes mientras la ruta está activa. */
+    fun applyAccountAdjustment(adjustment: StoreAccountAdjustment) {
+        val productId = adjustment.productId.orEmpty()
+        when (adjustment.type) {
+            StoreAccountAdjustmentType.MONEY_PAYMENT -> collectDebt(adjustment.storeId, adjustment.amount)
+            StoreAccountAdjustmentType.CONTAINER_RETURN ->
+                receiveContainers(adjustment.storeId, productId, adjustment.quantity.coerceAtMost(storeAccount(adjustment.storeId).containersDue(productId)))
+            StoreAccountAdjustmentType.DELIVERY_COMPLETED ->
+                completeDelivery(adjustment.storeId, productId, adjustment.quantity.coerceAtMost(storeAccount(adjustment.storeId).unitsPending(productId)), amountReceived = 0)
         }
     }
 
@@ -687,7 +707,12 @@ class RouteLedger private constructor(
             initialCash: Int,
             initialStock: Map<Product, Int>,
             initialEmptyContainers: Map<String, Int> = emptyMap(),
-        ): RouteLedger = RouteLedger(initialCash, initialStock, initialEmptyContainers)
+        ): RouteLedger {
+            // Solo al iniciar: durante la ruta el inventario puede quedar negativo y debe poder recargarse.
+            require(initialStock.values.all { it >= 0 }) { "El inventario inicial no puede ser negativo" }
+            require(initialEmptyContainers.values.all { it >= 0 }) { "Los envases iniciales no pueden ser negativos" }
+            return RouteLedger(initialCash, initialStock, initialEmptyContainers)
+        }
 
         fun restore(state: RouteLedgerState): RouteLedger {
             val productsById = state.products.associateBy(Product::id)
@@ -747,9 +772,18 @@ enum class StoreMarkerState {
 }
 
 object StoreMarkerPolicy {
-    fun resolve(account: StoreAccount, daysSinceLastSale: Int?): StoreMarkerState = when {
-        account.moneyDue > 0 -> StoreMarkerState.DEBT
-        account.hasPendingDelivery -> StoreMarkerState.PENDING_DELIVERY
+    fun resolve(account: StoreAccount, daysSinceLastSale: Int?): StoreMarkerState =
+        resolve(account.totalOwed, account.hasPendingDelivery, daysSinceLastSale)
+
+    fun resolve(account: StoreAccountState?, daysSinceLastSale: Int?): StoreMarkerState = resolve(
+        account?.let(AccountSettlementPolicy::moneyDue) ?: 0,
+        account?.pendingDeliveries?.values?.any { it > 0 } == true,
+        daysSinceLastSale,
+    )
+
+    private fun resolve(moneyOwed: Int, pendingDelivery: Boolean, daysSinceLastSale: Int?): StoreMarkerState = when {
+        moneyOwed > 0 -> StoreMarkerState.DEBT
+        pendingDelivery -> StoreMarkerState.PENDING_DELIVERY
         daysSinceLastSale != null && daysSinceLastSale <= 3 -> StoreMarkerState.RECENT
         daysSinceLastSale != null && daysSinceLastSale <= 7 -> StoreMarkerState.DUE_SOON
         else -> StoreMarkerState.INACTIVE
@@ -766,4 +800,12 @@ object StoreMarkerPolicy {
             ?: return null
         return ((nowEpochMillis - latest).coerceAtLeast(0L) / 86_400_000L).toInt()
     }
+
+    fun daysSinceLastSaleByStore(
+        sales: List<SaleRecord>,
+        nowEpochMillis: Long = System.currentTimeMillis(),
+    ): Map<String, Int> = sales.asSequence()
+        .filter { it.storeId != null && !it.cancelled }
+        .groupBy({ it.storeId!! }, SaleRecord::recordedAtEpochMillis)
+        .mapValues { (_, times) -> ((nowEpochMillis - times.max()).coerceAtLeast(0L) / 86_400_000L).toInt() }
 }

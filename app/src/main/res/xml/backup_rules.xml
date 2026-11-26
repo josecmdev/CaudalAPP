@@ -1,13 +1,14 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copia de seguridad automática de Android (Google Drive de la cuenta de la tablet)
+    para Android 11 y anteriores. En Android 12+ se usa data_extraction_rules.xml.
+
+    Google limita esta copia a 25 MB por aplicación: si se pasa, NO se guarda nada.
+    Por eso solo se incluyen los datos del negocio y los ajustes. Los recorridos GPS
+    (route-tracks/) pueden crecer mucho y van en el respaldo manual de Ajustes.
+    Los mapas sin internet se vuelven a descargar.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <include domain="file" path="caudal-state-v1.json" />
+    <include domain="sharedpref" path="caudal-settings-v1.xml" />
 </full-backup-content>

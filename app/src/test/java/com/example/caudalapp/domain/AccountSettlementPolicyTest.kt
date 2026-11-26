@@ -55,4 +55,14 @@ class AccountSettlementPolicyTest {
         assertEquals(3, updated.pendingDeliveries.getValue("bags"))
         assertEquals(2, updated.pendingContainers.getValue("water-jug"))
     }
+
+    @Test
+    fun `reemplazar una cuenta saldada la quita de la lista`() {
+        val paid = StoreAccountState("a", emptyList(), emptyMap(), emptyMap(), emptyMap())
+        val other = StoreAccountState("b", listOf(Debt(10, 10)), emptyMap(), emptyMap(), emptyMap())
+        val owing = paid.copy(debts = listOf(Debt(5, 5)))
+
+        assertEquals(listOf(other), AccountSettlementPolicy.replace(listOf(owing, other), paid))
+        assertEquals(listOf(owing, other), AccountSettlementPolicy.replace(listOf(paid.copy(debts = listOf(Debt(9, 9))), other), owing))
+    }
 }

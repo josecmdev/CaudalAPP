@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Caudal Oficina</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <section id="login" class="card narrow" hidden>
+    <h1>Caudal Oficina</h1>
+    <p class="muted">Entra con la cuenta de administrador.</p>
+    <form id="login-form">
+      <label>Usuario o correo <input id="user" autocomplete="username" required></label>
+      <label>Contraseña <input id="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Entrar</button>
+      <p id="login-error" class="error" role="alert"></p>
+    </form>
+  </section>
+
+  <section id="missing-config" class="card narrow" hidden>
+    <h1>Falta configurar Supabase</h1>
+    <p>Copia <code>config.example.js</code> como <code>config.js</code> y pega la URL y la llave anon del proyecto.</p>
+  </section>
+
+  <main id="app" hidden>
+    <header>
+      <h1>Caudal Oficina</h1>
+      <span id="updated" class="updated" aria-live="polite"></span>
+      <label>Periodo
+        <select id="period">
+          <option value="30">Últimos 30 días</option>
+          <option value="90" selected>Últimos 90 días</option>
+          <option value="365">Último año</option>
+          <option value="0">Todo</option>
+        </select>
+      </label>
+      <button id="refresh" class="secondary">Actualizar</button>
+      <button id="logout" class="secondary">Salir</button>
+    </header>
+
+    <section class="kpis" id="kpis"></section>
+
+    <section class="grid">
+      <div class="card">
+        <h2>Tabletas</h2>
+        <p class="muted">Toca una tableta para ver su última ubicación.</p>
+        <ul id="devices" class="devices"></ul>
+      </div>
+      <div class="card map-card"><div id="map"></div></div>
+    </section>
+
+    <section class="grid">
+      <div class="card"><h2>Productos más vendidos (Q)</h2><canvas id="chart-products"></canvas></div>
+      <div class="card"><h2>¿Qué día conviene salir?</h2><p class="muted">Promedio por ruta según el día en que salió.</p><canvas id="chart-weekday"></canvas><p id="best-day" class="highlight"></p></div>
+    </section>
+
+    <section class="grid">
+      <div class="card"><h2>Ventas por día</h2><canvas id="chart-trend"></canvas></div>
+      <div class="card"><h2>Precios por producto</h2><div class="table-wrap"><table id="prices"></table></div></div>
+    </section>
+
+    <section class="card"><h2>Cuentas pendientes</h2><p class="muted">Lo que cada tienda debe ahora y lo que ya pagó con "Marcar como pagado".</p><div class="table-wrap"><table id="accounts"></table></div></section>
+
+    <section class="card"><h2>Rutas</h2><div class="table-wrap"><table id="routes"></table></div></section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="config.js" onerror="window.CAUDAL_CONFIG = null"></script>
+  <script src="analytics.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -110,6 +110,18 @@ class StoreDirectory(
 
     fun allStores(): List<Store> = stores.values.toList()
 
+    /** Aplica tiendas bajadas del catálogo compartido: agrega las nuevas y actualiza las cambiadas. */
+    fun mergeShared(remote: List<Store>): Boolean {
+        var changed = false
+        remote.filter { it.location.isValid && it.name.isNotBlank() }.forEach { incoming ->
+            if (stores[incoming.id] != incoming) {
+                stores[incoming.id] = incoming.copy()
+                changed = true
+            }
+        }
+        return changed
+    }
+
     companion object {
         fun restore(savedStores: List<Store>): StoreDirectory = StoreDirectory().apply {
             savedStores.forEach { store -> stores[store.id] = store.copy() }

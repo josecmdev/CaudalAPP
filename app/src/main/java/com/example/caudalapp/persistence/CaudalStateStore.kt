@@ -25,6 +25,8 @@ import com.example.caudalapp.domain.TransferLine
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 
 data class CaudalRestoredState(
     val activeRoute: ActiveRoute?,
@@ -195,6 +197,7 @@ private data class CompletedRouteDto(
     val countedCash: Int? = null,
     val countedStock: Map<String, Int> = emptyMap(),
     val expectedStock: Map<String, Int> = emptyMap(),
+    val archived: Boolean = false,
 )
 
 @Serializable
@@ -220,18 +223,110 @@ object CaudalStateCodec {
     fun decode(value: String): CaudalRestoredState = json.decodeFromString<PersistedStateDto>(value).toDomain()
 }
 
-class CaudalStateStore(private val stateFile: File) {
-    fun load(): CaudalRestoredState? = runCatching {
+/**
+ * Guarda todo el estado en un único archivo JSON.
+ *
+ * Reglas de seguridad:
+ * - Si el archivo existe pero no se puede leer o decodificar, se aparta con el sufijo
+ *   `.unreadable-<epochMillis>` en lugar de ignorarse, para que el siguiente guardado no
+ *   sobrescriba los datos originales. [lastSetAsideFile] indica dónde quedó.
+ * - El guardado escribe primero un archivo temporal sincronizado con el disco y luego lo
+ *   reemplaza con un rename atómico, así el archivo principal nunca queda a medio escribir
+ *   ni desaparece.
+ */
+class CaudalStateStore(
+    private val stateFile: File,
+    private val clock: () -> Long = System::currentTimeMillis,
+) {
+    private val directory: File get() = stateFile.absoluteFile.parentFile
+    /** El historial va aparte: casi nunca cambia y es lo que más pesa, así cada venta escribe un archivo chico. */
+    private val historyFile: File get() = File(directory, "${stateFile.nameWithoutExtension}-history.json")
+
+    /** Lo que hay en [historyFile] según este guardador; null si no lo sabe. */
+    private var savedHistory: List<CompletedRouteRecord>? = null
+
+    /** Archivo ilegible que la última llamada a [load] apartó, o null si no apartó ninguno. */
+    var lastSetAsideFile: File? = null
+        private set
+
+    fun load(): CaudalRestoredState? {
+        lastSetAsideFile = null
+        recoverInterruptedFallbackSave(stateFile)
+        recoverInterruptedFallbackSave(historyFile)
         if (!stateFile.exists()) return null
-        CaudalStateCodec.decode(stateFile.readText(Charsets.UTF_8))
-    }.getOrNull()
+        val state = runCatching { CaudalStateCodec.decode(stateFile.readText(Charsets.UTF_8)) }
+            .getOrElse {
+                lastSetAsideFile = setAsideUnreadableFile(stateFile)
+                return null
+            }
+        // Sin archivo de historial es el formato anterior: el historial viene dentro del principal.
+        if (!historyFile.exists()) return state
+        val history = runCatching { CaudalStateCodec.decode(historyFile.readText(Charsets.UTF_8)).completedRoutes }
+            .getOrElse {
+                lastSetAsideFile = setAsideUnreadableFile(historyFile)
+                return state
+            }
+        savedHistory = history
+        return state.copy(completedRoutes = history)
+    }
 
     fun save(state: CaudalRestoredState) {
-        stateFile.parentFile?.mkdirs()
-        val temporary = File(stateFile.parentFile, "${stateFile.name}.tmp")
-        temporary.writeText(CaudalStateCodec.encode(state), Charsets.UTF_8)
-        if (stateFile.exists() && !stateFile.delete()) return
-        temporary.renameTo(stateFile)
+        directory.mkdirs()
+        val history = state.completedRoutes
+        val historyChanged = if (historyFile.exists()) history != savedHistory else history.isNotEmpty()
+        // Primero el historial: si se corta en medio, queda historial nuevo con principal viejo, sin perder rutas.
+        if (historyChanged) {
+            writeSafely(historyFile, CaudalStateCodec.encode(CaudalRestoredState(null, StoreDirectory(), history)))
+            savedHistory = history
+        }
+        writeSafely(stateFile, CaudalStateCodec.encode(state.copy(completedRoutes = emptyList())))
+    }
+
+    private fun writeSafely(target: File, text: String) {
+        val temporary = File(directory, "${target.name}.tmp")
+        FileOutputStream(temporary).use { output ->
+            output.write(text.toByteArray(Charsets.UTF_8))
+            output.flush()
+            output.fd.sync()
+        }
+        // En Android y en la JVM sobre Linux, renameTo es rename(2): atómico y reemplaza el destino.
+        if (temporary.renameTo(target)) return
+        replaceWithoutAtomicRename(target, temporary)
+    }
+
+    /**
+     * Respaldo para sistemas donde rename no reemplaza un archivo existente (por ejemplo Windows
+     * al correr pruebas). Mueve el archivo anterior a `.previous` antes de colocar el nuevo, de
+     * modo que en ningún momento se pierden ambos.
+     */
+    private fun replaceWithoutAtomicRename(target: File, temporary: File) {
+        val previous = File(directory, "${target.name}.previous")
+        previous.delete()
+        if (target.exists() && !target.renameTo(previous)) {
+            throw IOException("No se pudo reemplazar ${target.name}")
+        }
+        if (!temporary.renameTo(target)) {
+            previous.renameTo(target)
+            throw IOException("No se pudo guardar ${target.name}")
+        }
+        previous.delete()
+    }
+
+    /** Si un guardado de respaldo se interrumpió entre sus dos renames, restaura el archivo anterior. */
+    private fun recoverInterruptedFallbackSave(file: File) {
+        val previous = File(directory, "${file.name}.previous")
+        if (!file.exists() && previous.exists()) previous.renameTo(file)
+    }
+
+    private fun setAsideUnreadableFile(file: File): File? {
+        val target = File(directory, "${file.name}.unreadable-${clock()}")
+        if (file.renameTo(target)) return target
+        // Si no se puede mover, se copia; si tampoco, se deja el original intacto y se avisa.
+        return runCatching {
+            file.copyTo(target, overwrite = false)
+            file.delete()
+            target
+        }.getOrNull()
     }
 }
 
@@ -256,6 +351,7 @@ private fun CaudalRestoredState.toDto() = PersistedStateDto(
             record.countedCash,
             record.countedStock,
             record.expectedStock,
+            record.archived,
         )
     },
     outstandingAccounts = outstandingAccounts.map(StoreAccountState::toDto),
@@ -340,6 +436,7 @@ private fun PersistedStateDto.toDomain(): CaudalRestoredState {
                 dto.countedCash,
                 dto.countedStock,
                 dto.expectedStock,
+                dto.archived,
             )
         },
         outstandingAccounts = outstandingAccounts.map(AccountDto::toDomain),

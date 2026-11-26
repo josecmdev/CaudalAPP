@@ -53,25 +53,27 @@ fun RouteHistoryScreen(
     routes: List<CompletedRouteRecord>,
     stores: StoreDirectory,
     productName: (String) -> String,
-    onDeleteRoute: (CompletedRouteRecord) -> Unit,
+    onArchiveChanged: (CompletedRouteRecord, archived: Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var selectedRoute by remember { mutableStateOf<CompletedRouteRecord?>(null) }
     var deleteCandidate by remember { mutableStateOf<CompletedRouteRecord?>(null) }
+    var showArchived by remember { mutableStateOf(false) }
+    val visibleRoutes = routes.filter { it.archived == showArchived }
     selectedRoute?.let { record ->
         RouteTrackDialog(record = record, stores = stores, onDismiss = { selectedRoute = null })
     }
     deleteCandidate?.let { record ->
         AlertDialog(
             onDismissRequest = { deleteCandidate = null },
-            title = { Text("¿Eliminar esta ruta?", fontWeight = FontWeight.Bold) },
-            text = { Text("Se borrarán el resumen y el recorrido GPS. Las tiendas y cuentas pendientes no cambiarán.") },
+            title = { Text("¿Archivar esta ruta?", fontWeight = FontWeight.Bold) },
+            text = { Text("Dejará de verse en el historial, pero no se borra nada. Puedes recuperarla en Archivadas.") },
             confirmButton = {
                 Button(onClick = {
-                    onDeleteRoute(record)
+                    onArchiveChanged(record, true)
                     deleteCandidate = null
-                }) { Text("Eliminar") }
+                }) { Text("Archivar") }
             },
             dismissButton = { TextButton(onClick = { deleteCandidate = null }) { Text("Cancelar") } },
         )
@@ -80,20 +82,22 @@ fun RouteHistoryScreen(
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("← Volver") }
             Text(
-                "Historial de rutas",
+                if (showArchived) "Rutas archivadas" else "Historial de rutas",
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
-            Spacer(Modifier.size(72.dp))
+            TextButton(onClick = { showArchived = !showArchived }) {
+                Text(if (showArchived) "Ver historial" else "Archivadas (${routes.count(CompletedRouteRecord::archived)})")
+            }
         }
-        if (routes.isEmpty()) {
+        if (visibleRoutes.isEmpty()) {
             Column(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text("Todavía no hay rutas finalizadas", fontWeight = FontWeight.SemiBold)
+                Text(if (showArchived) "No hay rutas archivadas" else "Todavía no hay rutas finalizadas", fontWeight = FontWeight.SemiBold)
                 Text("El primer cierre aparecerá aquí", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
@@ -102,10 +106,12 @@ fun RouteHistoryScreen(
                 contentPadding = PaddingValues(bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                items(routes.asReversed(), key = { it.finishedAtEpochMillis }) { record ->
+                items(visibleRoutes.asReversed(), key = { it.finishedAtEpochMillis }) { record ->
                     val dismissState = rememberSwipeToDismissBoxState(
                         confirmValueChange = { value ->
-                            if (value == SwipeToDismissBoxValue.EndToStart) deleteCandidate = record
+                            if (value == SwipeToDismissBoxValue.EndToStart) {
+                                if (record.archived) onArchiveChanged(record, false) else deleteCandidate = record
+                            }
                             false
                         },
                     )
@@ -120,7 +126,7 @@ fun RouteHistoryScreen(
                                     .padding(horizontal = 24.dp),
                                 contentAlignment = Alignment.CenterEnd,
                             ) {
-                                Text("Eliminar", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text(if (record.archived) "Restaurar" else "Archivar", color = MaterialTheme.colorScheme.onError, fontWeight = FontWeight.Bold)
                             }
                         },
                     ) {
@@ -164,9 +170,9 @@ private fun HistoryRouteCard(
                     if (difference >= 0) "Sobrante" else "Faltante",
                     "Q${kotlin.math.abs(difference)}",
                 )
-                (record.expectedStock.keys + record.countedStock.keys).forEach { productId ->
+                // Solo lo contado: un campo vacío es "no contado", no un faltante.
+                record.countedStock.forEach { (productId, counted) ->
                     val expected = record.expectedStock[productId] ?: 0
-                    val counted = record.countedStock[productId] ?: 0
                     val stockDifference = counted - expected
                     if (stockDifference != 0) {
                         HistoryRow(
