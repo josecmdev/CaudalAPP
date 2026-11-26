@@ -3,6 +3,14 @@ const Q = (n) => 'Q' + Math.round(n).toLocaleString('es-GT');
 const when = (iso) => (iso ? new Date(iso).toLocaleString('es-GT', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const FRESH_MS = 5 * 60000;
+// Camión visto desde arriba, apuntando al norte; se rota con CSS según el rumbo.
+const TRUCK_SVG = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="9" y="11" width="14" height="18" rx="2" class="cargo"/>' +
+  '<rect x="10" y="3" width="12" height="9" rx="3.5" class="cab"/><rect x="11.5" y="4.5" width="9" height="3" rx="1" class="glass"/>' +
+  '<rect x="7.5" y="6" width="2" height="4" rx="1" class="tire"/><rect x="22.5" y="6" width="2" height="4" rx="1" class="tire"/>' +
+  '<rect x="7.5" y="23" width="2" height="5" rx="1" class="tire"/><rect x="22.5" y="23" width="2" height="5" rx="1" class="tire"/></svg>';
+
 const config = window.CAUDAL_CONFIG;
 if (!config || !config.supabaseUrl || !config.supabaseAnonKey) {
   $('missing-config').hidden = false;
@@ -12,7 +20,7 @@ if (!config || !config.supabaseUrl || !config.supabaseAnonKey) {
 
 function start(db) {
   const charts = {};
-  let map, markers = {}, storeLayer, fitted = false;
+  let map, markers = {}, storeLayer, fitted = false, loadedAt = 0, kpiValues = {};
 
   $('login-form').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -29,6 +37,8 @@ function start(db) {
   show();
   // Cada 2 min y solo con la pestaña a la vista: cuida el límite gratis de datos de Supabase.
   setInterval(() => { if (!document.hidden && !$('app').hidden) load(); }, 120000);
+  // Reloj local, sin peticiones: "hace X min" y camiones que pasan a gris.
+  setInterval(tick, 30000);
 
   async function show() {
     const { data: { session } } = await db.auth.getSession();
@@ -77,50 +87,127 @@ function start(db) {
       ]);
       const names = Object.fromEntries(profiles.map((p) => [p.id, p.username]));
       renderKpis(CaudalAnalytics.kpis(lines, routes), accounts);
-      renderStores(stores);
-      renderDevices(devices, names); if (!fitted) { const points = [...Object.values(markers).map((m) => m.getLatLng()), ...storeLayer.getLayers().map((l) => l.getLatLng())]; if (points.length) { map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 16 }); fitted = true; } } if (!fitted) { const points = [...Object.values(markers).map((m) => m.getLatLng()), ...storeLayer.getLayers().map((l) => l.getLatLng())]; if (points.length) { map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 16 }); fitted = true; } }
+      renderStores(stores, accounts);
+      renderDevices(devices, names);
+      if (!fitted) {
+        const points = [...Object.values(markers).map((t) => t.target), ...storeLayer.getLayers().map((l) => l.getLatLng())];
+        if (points.length) { map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 16 }); fitted = true; }
+      }
       renderCharts(lines, routes);
       renderPrices(CaudalAnalytics.prices(lines));
       renderRoutes(routes, devices, names);
       renderAccounts(accounts, devices, names);
+      loadedAt = Date.now();
+      tick();
     } catch (error) {
       $('kpis').innerHTML = `<p class="error">No se pudieron cargar los datos: ${esc(error.message)}</p>`;
     }
   }
 
   function renderKpis(k, accounts) {
+    const N = (n) => Math.round(n).toLocaleString('es-GT');
     const items = [
-      ['Ventas', Q(k.sales)], ['Unidades', k.units.toLocaleString('es-GT')], ['Gastos de ruta', Q(k.expenses)],
-      ['Ganancia (ventas − gastos)', Q(k.profit)], ['Rutas', k.routes], ['Venta promedio', Q(k.averageTicket)], ['Por cobrar al cierre', Q(k.pending)],
+      ['Ventas', k.sales, Q], ['Unidades', k.units, N], ['Gastos de ruta', k.expenses, Q],
+      ['Ganancia (ventas − gastos)', k.profit, Q], ['Rutas', k.routes, N], ['Venta promedio', k.averageTicket, Q], ['Por cobrar al cierre', k.pending, Q],
     ];
-    if (accounts) items.push(['Deben las tiendas', Q(accounts.reduce((sum, a) => sum + a.money_due, 0))]);
-    $('kpis').innerHTML = items.map(([label, value]) => `<div class="kpi"><span>${label}</span><strong>${value}</strong></div>`).join('');
+    if (accounts) items.push(['Deben las tiendas', accounts.reduce((sum, a) => sum + a.money_due, 0), Q]);
+    const box = $('kpis');
+    // Solo se recrean (y se funden) si cambió el juego de tarjetas; en recargas solo cuentan los números.
+    const key = items.map(([label]) => label).join('|');
+    if (box.dataset.key !== key) {
+      box.dataset.key = key;
+      box.innerHTML = items.map(([label], i) => `<div class="kpi" style="--i:${i}"><span>${label}</span><strong></strong></div>`).join('');
+    }
+    items.forEach(([label, value, fmt], i) => countTo(box.children[i].querySelector('strong'), kpiValues[label] ?? 0, value, fmt));
+    kpiValues = Object.fromEntries(items.map(([label, value]) => [label, value]));
   }
 
-  function renderStores(stores) {
+  function countTo(el, from, to, fmt) {
+    if (reducedMotion.matches || from === to) { el.textContent = fmt(to); return; }
+    animate(800, (k) => { el.textContent = fmt(from + (to - from) * k); });
+  }
+
+  function animate(ms, step) {
+    const t0 = performance.now();
+    const frame = (now) => {
+      const t = Math.min(1, (now - t0) / ms);
+      step(1 - (1 - t) ** 3);
+      if (t < 1) requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
+
+  const isFresh = (iso) => iso && Date.now() - new Date(iso) < FRESH_MS;
+
+  function tick() {
+    if (loadedAt) {
+      const min = Math.floor((Date.now() - loadedAt) / 60000);
+      $('updated').textContent = min < 1 ? 'Actualizado hace menos de 1 min' : `Actualizado hace ${min} min`;
+    }
+    for (const t of Object.values(markers)) t.marker.getElement()?.classList.toggle('stale', !isFresh(t.positionAt));
+  }
+
+  function renderStores(stores, accounts) {
+    const due = {};
+    for (const a of accounts || []) due[a.id] = (due[a.id] || 0) + a.money_due;
     storeLayer?.remove();
-    storeLayer = L.layerGroup(stores.map((s) => L.circleMarker([s.latitude, s.longitude], { radius: 5, color: '#1565c0', weight: 1, fillOpacity: 0.7 })
-      .bindPopup(`<b>${esc(s.name)}</b>${s.phone ? '<br>' + esc(s.phone) : ''}`))).addTo(map);
+    storeLayer = L.layerGroup(stores.map((s) => {
+      const owes = due[s.id] > 0;
+      return L.circleMarker([s.latitude, s.longitude], { radius: owes ? 6 : 5, color: owes ? '#c62828' : '#1565c0', weight: 1, fillOpacity: owes ? 0.85 : 0.7 })
+        .bindPopup(`<b>${esc(s.name)}</b>${s.phone ? '<br>' + esc(s.phone) : ''}${owes ? `<br><span class="error">Debe ${Q(due[s.id])}</span>` : ''}`);
+    })).addTo(map);
+  }
+
+  // Rumbo aproximado en grados (0 = norte); basta para distancias de una ruta.
+  function bearing(a, b) {
+    const dx = (b.lng - a.lng) * Math.cos((a.lat * Math.PI) / 180);
+    return (Math.atan2(dx, b.lat - a.lat) * 180) / Math.PI;
   }
 
   function renderDevices(devices, names) {
-    Object.values(markers).forEach((m) => m.remove());
-    markers = {};
+    const seen = new Set();
     $('devices').innerHTML = devices.length ? '' : '<li class="muted">Ninguna tableta ha sincronizado todavía.</li>';
     for (const d of devices) {
-      const label = `${esc(names[d.user_id] || 'vendedor')} · ${esc(d.name)}`;
+      const seller = names[d.user_id] || 'vendedor';
+      const label = `${esc(seller)} · ${esc(d.name)}`;
       if (d.last_latitude != null) {
-        markers[d.id] = L.marker([d.last_latitude, d.last_longitude]).addTo(map)
-          .bindPopup(`<b>${label}</b><br>Ubicación: ${when(d.last_position_at)}`);
+        seen.add(d.id);
+        const to = L.latLng(d.last_latitude, d.last_longitude);
+        let t = markers[d.id];
+        if (!t) {
+          const icon = L.divIcon({ className: 'truck', iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -14],
+            html: `<div class="truck-body">${TRUCK_SVG}</div><span class="truck-label"></span>` });
+          t = markers[d.id] = { marker: L.marker(to, { icon, keyboard: false }).addTo(map), heading: 0, target: to };
+        } else if (!to.equals(t.target)) {
+          t.heading = bearing(t.target, to);
+          slide(t, to);
+        }
+        t.target = to;
+        t.positionAt = d.last_position_at;
+        const el = t.marker.getElement();
+        el.querySelector('.truck-body').style.transform = `rotate(${t.heading}deg)`;
+        el.querySelector('.truck-label').textContent = seller;
+        t.marker.bindPopup(`<b>${label}</b><br>Ubicación: ${when(d.last_position_at)}`);
       }
       const li = document.createElement('li');
       li.innerHTML = `<button>${label}<small>Visto: ${when(d.last_seen_at)} · ${d.last_latitude != null ? 'con ubicación' : 'sin ubicación aún'}</small></button>`;
       li.querySelector('button').addEventListener('click', () => {
-        const m = markers[d.id];
-        if (m) { map.setView(m.getLatLng(), 15); m.openPopup(); }
+        const t = markers[d.id];
+        if (t) { map.setView(t.target, 15); t.marker.openPopup(); }
       });
       $('devices').append(li);
     }
+    for (const id of Object.keys(markers)) if (!seen.has(id)) { markers[id].marker.remove(); delete markers[id]; }
+  }
+
+  function slide(t, to) {
+    const from = t.marker.getLatLng();
+    if (reducedMotion.matches) { t.marker.setLatLng(to); return; }
+    const run = (t.run = {});
+    animate(1500, (k) => {
+      // Si llega otra posición a media animación, la anterior deja de mover el marcador.
+      if (t.run === run) t.marker.setLatLng([from.lat + (to.lat - from.lat) * k, from.lng + (to.lng - from.lng) * k]);
+    });
   }
 
   function chart(id, type, labels, datasets, options = {}) {
