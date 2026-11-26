@@ -380,7 +380,8 @@ private fun MapOptionsDialog(
                     Spacer(Modifier.height(18.dp))
                 }
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                    val columns = if (maxWidth >= 700.dp) 2 else 1
+                    // 3 columnas en la tablet horizontal: con 2, la última fila quedaba cortada abajo.
+                    val columns = if (maxWidth >= 900.dp) 3 else if (maxWidth >= 700.dp) 2 else 1
                     Column(
                         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -542,21 +543,17 @@ private fun ActiveRouteActions(onFinishRoute: () -> Unit, onDiscardRoute: () -> 
             )
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Button(onClick = onFinishRoute, modifier = Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(10.dp)) {
                     Icon(Icons.Default.Check, contentDescription = null)
                     Text("Finalizar y guardar", modifier = Modifier.padding(start = 8.dp), fontWeight = FontWeight.Bold)
                 }
-                androidx.compose.material3.OutlinedButton(
-                    onClick = onDiscardRoute,
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surface),
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                    Text("Eliminar ruta", modifier = Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                // Secundario y separado: borrar la ruta no debe tocarse por error al finalizar.
+                TextButton(onClick = onDiscardRoute) {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                    Text("Eliminar ruta", modifier = Modifier.padding(start = 6.dp), color = MaterialTheme.colorScheme.error)
                 }
             }
         }

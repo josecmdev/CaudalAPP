@@ -2,15 +2,12 @@ package com.example.caudalapp
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Place
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -81,32 +78,17 @@ fun StoreDetailsDialog(
     val unitsPending = account.pendingDeliveries.values.sum()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(store.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                // Mover es raro y no debe competir con vender: queda en el menú de la tienda.
-                Box {
-                    var menuOpen by remember { mutableStateOf(false) }
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Más opciones") }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Mover ubicación") },
-                            leadingIcon = { Icon(Icons.Default.Place, contentDescription = null) },
-                            onClick = {
-                                menuOpen = false
-                                onMove()
-                            },
-                        )
-                    }
-                }
-            }
-        },
+        title = { Text(store.name, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                AccountRow("Debe dinero", "Q${account.totalOwed}", account.totalOwed > 0)
-                AccountRow("Debe envases", containersDue.toString(), containersDue > 0)
-                AccountRow("Falta entregar", unitsPending.toString(), unitsPending > 0)
-                Button(onClick = onNewSale, modifier = Modifier.fillMaxWidth()) { Text("Nueva venta") }
+                if (account.totalOwed == 0 && containersDue == 0 && unitsPending == 0) {
+                    Text("Al día: no debe nada", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    if (account.totalOwed > 0) AccountRow("Debe dinero", "Q${account.totalOwed}", true)
+                    if (containersDue > 0) AccountRow("Debe envases", containersDue.toString(), true)
+                    if (unitsPending > 0) AccountRow("Falta entregar", unitsPending.toString(), true)
+                }
+                Button(onClick = onNewSale, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("Nueva venta") }
                 if (account.totalOwed > 0) {
                     Button(onClick = onCollectDebt, modifier = Modifier.fillMaxWidth()) { Text("Registrar pago") }
                 }
@@ -116,6 +98,13 @@ fun StoreDetailsDialog(
                 if (unitsPending > 0) {
                     Button(onClick = onCompleteDelivery, modifier = Modifier.fillMaxWidth()) { Text("Completar entrega") }
                 }
+            }
+        },
+        dismissButton = {
+            // Mover es raro y no debe competir con vender: va abajo como acción secundaria.
+            TextButton(onClick = onMove) {
+                Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("Mover ubicación", modifier = Modifier.padding(start = 6.dp))
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },

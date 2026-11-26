@@ -39,6 +39,13 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.OutlinedButton
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
@@ -135,6 +142,12 @@ fun ActiveRouteScreen(
         previousRoutes.flatMap(CompletedRouteRecord::sales) + route.ledger.sales
     }
     val daysSinceLastSaleByStore = remember(historicalSales) { StoreMarkerPolicy.daysSinceLastSaleByStore(historicalSales) }
+
+    // Atrás cierra primero lo que está abierto sobre el mapa.
+    BackHandler(enabled = panelExpanded || actionMenuOpen) {
+        actionMenuOpen = false
+        panelExpanded = false
+    }
 
     LaunchedEffect(closeRequested) {
         if (closeRequested) {
@@ -481,24 +494,24 @@ fun ActiveRouteScreen(
             exit = fadeOut() + slideOutVertically { it / 2 },
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                RouteActionButton("Venta rápida") {
+                RouteActionButton(Icons.Default.ShoppingCart, "Venta rápida") {
                     actionMenuOpen = false
                     quickSaleOpen = true
                 }
-                RouteActionButton("Agregar tienda") {
+                RouteActionButton(Icons.Default.Home, "Agregar tienda") {
                     actionMenuOpen = false
                     movingStore = null
                     placingStore = true
                 }
-                RouteActionButton("Recargar en sede") {
+                RouteActionButton(Icons.Default.Refresh, "Recargar en sede") {
                     actionMenuOpen = false
                     reloadOpen = true
                 }
-                RouteActionButton("Transferir a Kenneth") {
+                RouteActionButton(Icons.Default.Person, "Transferir a Kenneth") {
                     actionMenuOpen = false
                     kennethTransferOpen = true
                 }
-                RouteActionButton("Registrar gasto") {
+                RouteActionButton(Icons.Default.Edit, "Registrar gasto") {
                     actionMenuOpen = false
                     expenseOpen = true
                 }
@@ -507,7 +520,10 @@ fun ActiveRouteScreen(
 
         val rotation by animateFloatAsState(if (actionMenuOpen) 45f else 0f, label = "fabRotation")
         Button(
-            onClick = { actionMenuOpen = !actionMenuOpen },
+            onClick = {
+                actionMenuOpen = !actionMenuOpen
+                if (actionMenuOpen && landscape) panelExpanded = false
+            },
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(
@@ -546,7 +562,7 @@ fun ActiveRouteScreen(
                         }
                         placingStore = false
                     }) { Text(if (movingStore == null) "Usar este punto" else "Guardar ubicación") }
-                    Button(onClick = {
+                    OutlinedButton(onClick = {
                         placingStore = false
                         movingStore = null
                     }) { Text("Cancelar") }
@@ -599,9 +615,10 @@ private fun formatRouteDuration(milliseconds: Long): String {
 }
 
 @Composable
-private fun RouteActionButton(label: String, onClick: () -> Unit) {
-    Button(onClick = onClick, shape = RoundedCornerShape(16.dp)) {
-        Text(label, modifier = Modifier.padding(vertical = 2.dp))
+private fun RouteActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Button(onClick = onClick, modifier = Modifier.width(250.dp), shape = RoundedCornerShape(16.dp)) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Text(label, modifier = Modifier.weight(1f).padding(start = 12.dp, top = 2.dp, bottom = 2.dp))
     }
 }
 

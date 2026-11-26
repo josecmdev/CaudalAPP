@@ -6,6 +6,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -176,10 +177,11 @@ fun HomeMapScreen(
                 Button(onClick = { placementMode = false; namingLocation = center }) { Text("Usar este punto") }
             }
         } else {
-            val controlsBottom = if (!landscape && panelExpanded) 224.dp else 62.dp
+            // En horizontal, mismo alto que el + de la ruta activa para que no salte al iniciar.
+            val controlsBottom = if (landscape) 20.dp else if (panelExpanded) 224.dp else 62.dp
             Button(
                 onClick = { placementMode = true },
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = controlsBottom).size(58.dp),
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = controlsBottom).size(60.dp),
                 shape = CircleShape,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
             ) { Icon(Icons.Default.Add, contentDescription = "Agregar tienda", modifier = Modifier.size(28.dp)) }
@@ -202,7 +204,7 @@ fun HomeMapScreen(
                 onExpandedChange = { panelExpanded = it },
                 modifier = if (landscape) {
                     Modifier.align(Alignment.CenterEnd).fillMaxHeight().padding(top = 76.dp, bottom = 12.dp)
-                        .width(if (panelExpanded) 270.dp else 42.dp)
+                        .width(if (panelExpanded) 270.dp else 68.dp)
                 } else Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
             )
         }
@@ -271,8 +273,17 @@ private fun HomeMapPanel(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            TextButton(onClick = { onExpandedChange(!expanded) }) {
-                Text(if (landscape) if (expanded) "›" else "‹" else if (expanded) "Ocultar ▼" else "Información ▲")
+            if (landscape && !expanded) {
+                Column(
+                    modifier = Modifier.fillMaxSize().clickable { onExpandedChange(true) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text("‹", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("Info", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                }
+            } else TextButton(onClick = { onExpandedChange(!expanded) }) {
+                Text(if (landscape) "›" else if (expanded) "Ocultar ▼" else "Información ▲")
             }
             AnimatedVisibility(expanded) {
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -2,7 +2,12 @@ package com.example.caudalapp
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -114,7 +119,8 @@ fun StoreMapLayer(
         if (placementMode && showPlacementHint) {
             Text(
                 "Mueve el mapa debajo de la mira\n${"%.5f".format(center.latitude)}, ${"%.5f".format(center.longitude)}",
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 92.dp)
+                // Abajo, junto a los botones: arriba tapaba las tiendas cercanas.
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp)
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = .94f), RoundedCornerShape(16.dp)).padding(12.dp),
                 textAlign = TextAlign.Center,
                 fontWeight = FontWeight.SemiBold,
@@ -133,6 +139,9 @@ fun StoreNameDialog(
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
+    val nameFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { nameFocus.requestFocus() }
+    val save = { if (name.isBlank()) error = true else onSave(name, phone.takeIf(String::isNotBlank)) }
     AlertDialog(
         onDismissRequest = {},
         properties = DialogProperties(
@@ -141,35 +150,33 @@ fun StoreNameDialog(
         ),
         title = { Text("Nueva tienda", fontWeight = FontWeight.Bold) },
         text = {
+            // En fila y sin coordenadas: en horizontal el teclado tapaba "Guardar".
             Column {
-                Text("${"%.5f".format(location.latitude)}, ${"%.5f".format(location.longitude)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it; error = false },
-                    modifier = Modifier.padding(top = 10.dp),
-                    label = { Text("Nombre de la tienda") },
-                    isError = error,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    modifier = Modifier.padding(top = 8.dp),
-                    label = { Text("Teléfono (opcional)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                    singleLine = true,
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it; error = false },
+                        modifier = Modifier.weight(1f).focusRequester(nameFocus),
+                        label = { Text("Nombre de la tienda") },
+                        isError = error,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = phone,
+                        onValueChange = { phone = it },
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Teléfono (opcional)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { save() }),
+                        singleLine = true,
+                    )
+                }
                 if (error) Text("Escribe el nombre", color = MaterialTheme.colorScheme.error)
             }
         },
-        confirmButton = {
-            Button(onClick = {
-                if (name.isBlank()) error = true else onSave(name, phone.takeIf(String::isNotBlank))
-            }) { Text("Guardar") }
-        },
+        confirmButton = { Button(onClick = save) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
 }
